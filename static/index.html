@@ -1,1 +1,705 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>UNG-PROMET</title><style>body{font-family:system-ui;margin:40px;max-width:760px}code{background:#eee;padding:3px 6px;border-radius:5px}</style></head><body><h1>UNG-PROMET</h1><p><strong>Public Revenue Operations, Management &amp; Electronic Taxation</strong></p><p>Revenue and tax services are online.</p><p>Live authority transmission is disabled until official integrations and current tax rules are verified.</p><p>Health: <code>/health</code></p></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>File your taxes</title>
+<style>
+  :root{
+    --ink:#16232F;
+    --navy:#142B45;
+    --navy-dim:#2B4A6B;
+    --paper:#EEF0EC;
+    --paper-raised:#FFFFFF;
+    --line:#C7CCC4;
+    --ochre:#A8791E;
+    --good:#31614C;
+    --bad:#9C3A2E;
+    --radius:3px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Iowan Old Style","Georgia",serif;
+    line-height:1.5;
+  }
+  .ui{font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;}
+  header{
+    background:var(--navy);
+    color:#F2F3EF;
+    padding:22px 20px 20px;
+    display:flex;justify-content:space-between;align-items:flex-start;
+  }
+  header h1{margin:0 0 4px;font-size:1.5rem;font-weight:600;letter-spacing:0.01em;}
+  header p{margin:0;font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;font-size:0.85rem;color:#B9C3CE;}
+  #signOutBtn{background:none;border:1px solid #4A6B8A;color:#D7DEE5;border-radius:var(--radius);padding:6px 12px;font-family:-apple-system,sans-serif;font-size:0.78rem;cursor:pointer;}
+  .steps{display:flex;font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;font-size:0.75rem;border-bottom:1px solid var(--line);background:var(--paper-raised);}
+  .step{flex:1;text-align:center;padding:10px 3px;color:#8A9088;border-bottom:2px solid transparent;}
+  .step.active{color:var(--navy);border-bottom-color:var(--ochre);font-weight:600;}
+  .step.done{color:var(--good);}
+  main{max-width:640px;margin:0 auto;padding:24px 20px 80px;}
+  .card{background:var(--paper-raised);border:1px solid var(--line);border-radius:var(--radius);padding:22px;margin-bottom:16px;}
+  .card h2{margin:0 0 4px;font-size:1.15rem;font-weight:600;}
+  .card .sub{font-family:-apple-system,sans-serif;font-size:0.82rem;color:#6C766F;margin:0 0 14px;}
+  label{display:block;font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;font-size:0.78rem;color:#4A554F;margin:14px 0 4px;}
+  input,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:var(--radius);font-size:0.95rem;font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;background:#fff;color:var(--ink);}
+  input:focus,select:focus,button:focus{outline:2px solid var(--navy-dim);outline-offset:1px;}
+  .row{display:flex;gap:12px;}
+  .row > div{flex:1;}
+  button{font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;cursor:pointer;border:none;border-radius:var(--radius);padding:11px 20px;font-size:0.9rem;font-weight:600;}
+  .btn-primary{background:var(--navy);color:#fff;}
+  .btn-primary:hover{background:var(--navy-dim);}
+  .btn-primary:disabled{background:#A9B2AC;cursor:not-allowed;}
+  .btn-secondary{background:transparent;color:var(--navy);border:1px solid var(--navy);}
+  .btn-text{background:none;color:var(--navy-dim);padding:6px 0;text-decoration:underline;}
+  .actions{display:flex;justify-content:space-between;margin-top:18px;align-items:center;}
+
+  .question{border-bottom:1px solid #E4E6E0;padding:14px 0;}
+  .question:last-child{border-bottom:none;}
+  .question .qtext{font-size:0.98rem;margin-bottom:8px;}
+  .yn{display:flex;gap:8px;}
+  .yn button{flex:1;background:#fff;border:1px solid var(--line);color:var(--ink);font-weight:500;padding:8px;}
+  .yn button.selected{background:var(--navy);color:#fff;border-color:var(--navy);}
+  .amount-reveal{margin-top:10px;display:flex;gap:8px;align-items:center;}
+  .amount-reveal input{flex:1;}
+
+  .upload-box{border:1px dashed var(--line);border-radius:var(--radius);padding:14px;text-align:center;font-family:-apple-system,sans-serif;font-size:0.82rem;color:#6C766F;margin-top:16px;}
+  .upload-box input[type=file]{margin-top:8px;}
+  .suggestion-card{background:#F6F5EF;border:1px solid var(--line);border-radius:var(--radius);padding:12px;margin-top:10px;font-family:-apple-system,sans-serif;font-size:0.85rem;}
+  .suggestion-card .note{color:var(--ochre);font-size:0.78rem;margin:4px 0 8px;}
+  .suggestion-card .row{gap:8px;}
+
+  .item-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #E4E6E0;font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;font-size:0.88rem;}
+  .item-row .amt{font-variant-numeric:tabular-nums;}
+  .item-row button{background:none;border:none;color:var(--bad);font-size:1rem;padding:0 4px;font-weight:400;}
+
+  .summary-line{display:flex;justify-content:space-between;font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;padding:6px 0;font-size:0.9rem;}
+  .summary-line.total{border-top:1px solid var(--line);margin-top:6px;padding-top:12px;font-size:1.1rem;font-weight:700;}
+  .refund{color:var(--good);}
+  .due{color:var(--bad);}
+
+  .validation-panel{margin-top:16px;}
+  .issue{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-radius:var(--radius);font-family:-apple-system,sans-serif;font-size:0.82rem;margin-bottom:6px;}
+  .issue.error{background:#F6E7E4;color:var(--bad);}
+  .issue.warning{background:#F4EEDD;color:var(--ochre);}
+
+  .disclaimer{font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;font-size:0.72rem;color:#6C766F;background:#E3E6DE;border-radius:var(--radius);padding:10px 12px;margin-top:16px;}
+  .confirmation{text-align:center;padding:10px 4px;}
+  .confirmation .code{font-family:"SF Mono",Consolas,monospace;font-size:1.1rem;letter-spacing:0.03em;background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:10px;margin:14px 0;}
+
+  .track-bar{display:flex;gap:4px;margin:16px 0;}
+  .track-seg{flex:1;height:6px;border-radius:3px;background:#DDE1D8;}
+  .track-seg.filled{background:var(--good);}
+  .track-label{font-family:-apple-system,sans-serif;font-size:0.85rem;color:var(--ink);text-align:center;}
+
+  .error{font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;color:var(--bad);font-size:0.85rem;margin-top:10px;}
+  .hint{font-family:-apple-system,sans-serif;font-size:0.78rem;color:#6C766F;margin-top:4px;}
+  .hidden{display:none !important;}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>File your taxes</h1>
+    <p>Filing with Uganda Revenue Authority (URA) · US IRS filing also available</p>
+  </div>
+  <button id="signOutBtn" class="hidden" onclick="signOut()">Sign out</button>
+</header>
+
+<div class="steps ui hidden" id="stepper">
+  <div class="step" data-step="1">Who's filing</div>
+  <div class="step" data-step="2">Income</div>
+  <div class="step" data-step="3">Deductions</div>
+  <div class="step" data-step="4">Review</div>
+  <div class="step" data-step="5">File</div>
+</div>
+
+<main>
+
+  <!-- Step 0: Auth -->
+  <section class="card" id="screen-0">
+    <h2 id="authHeading">Sign in</h2>
+    <p class="sub">Secured with a password and a one-time code from your authenticator app.</p>
+
+    <div id="authLoginForm">
+      <label>Email</label>
+      <input type="email" id="authEmail">
+      <label>Password</label>
+      <input type="password" id="authPassword">
+      <div class="actions">
+        <button class="btn-text" onclick="toggleAuthMode()">Need an account? Register</button>
+        <button class="btn-primary" onclick="doLogin()">Sign in</button>
+      </div>
+    </div>
+
+    <div id="authRegisterForm" class="hidden">
+      <label>Email</label>
+      <input type="email" id="regEmail">
+      <label>Password <span class="hint">(10+ characters)</span></label>
+      <input type="password" id="regPassword">
+      <div class="actions">
+        <button class="btn-text" onclick="toggleAuthMode()">Already have an account? Sign in</button>
+        <button class="btn-primary" onclick="doRegister()">Create account</button>
+      </div>
+    </div>
+
+    <div id="mfaSetupForm" class="hidden">
+      <p class="sub">Scan this into an authenticator app (Google Authenticator, Authy, 1Password), then enter the 6-digit code it shows.</p>
+      <div class="upload-box" id="mfaUriBox" style="word-break:break-all;font-family:monospace;font-size:0.72rem;"></div>
+      <label>6-digit code</label>
+      <input type="text" id="mfaSetupCode" maxlength="6" inputmode="numeric">
+      <div class="actions"><span></span><button class="btn-primary" onclick="confirmMfaSetup()">Enable MFA</button></div>
+    </div>
+
+    <div id="mfaLoginForm" class="hidden">
+      <label>6-digit code from your authenticator app</label>
+      <input type="text" id="mfaLoginCode" maxlength="6" inputmode="numeric">
+      <div class="actions"><span></span><button class="btn-primary" onclick="confirmMfaLogin()">Verify</button></div>
+    </div>
+
+    <div class="error hidden" id="err-0"></div>
+  </section>
+
+  <!-- Step 1: Who's filing -->
+  <section class="card hidden" id="screen-1">
+    <h2>Tell us who's filing</h2>
+    <label>Filing with</label>
+    <select id="jurisdiction">
+      <option value="UG_URA">Uganda Revenue Authority (URA)</option>
+      <option value="US_IRS">United States (IRS)</option>
+    </select>
+
+    <label>Filing as</label>
+    <select id="taxpayerType">
+      <option value="individual">An individual</option>
+      <option value="business">A business</option>
+    </select>
+
+    <div id="businessSubtypeWrap" class="hidden">
+      <label>Business type</label>
+      <select id="entitySubtype">
+        <option value="sole_proprietor">Sole proprietor</option>
+        <option value="llc">LLC</option>
+        <option value="corporation">Corporation</option>
+      </select>
+      <p class="hint" id="presumptiveHint">Sole proprietors with turnover up to UGX 150,000,000/year are taxed under URA's simplified presumptive tax on turnover, not on profit.</p>
+    </div>
+
+    <div id="filingStatusWrap">
+      <label id="filingStatusLabel">Residency status</label>
+      <select id="filingStatus">
+        <option value="resident">Resident</option>
+        <option value="non_resident" disabled>Non-resident (not yet available)</option>
+      </select>
+    </div>
+
+    <label id="nameLabel">Full legal name</label>
+    <input type="text" id="legalName" placeholder="Jane A. Nakato">
+
+    <label id="idLabel">Tax Identification Number (TIN)</label>
+    <input type="text" id="taxId" placeholder="1000123456">
+    <p class="hint">Encrypted before it's stored — only the last 4 digits are ever shown back to you.</p>
+
+    <label>Email</label>
+    <input type="email" id="email" placeholder="you@example.com">
+
+    <div class="row">
+      <div><label>Tax year</label><input type="number" id="taxYear" value="2026"></div>
+    </div>
+
+    <div class="actions">
+      <span></span>
+      <button class="btn-primary" onclick="startReturn()">Continue</button>
+    </div>
+    <div class="error hidden" id="err-1"></div>
+  </section>
+
+  <!-- Step 2: Income (interview style) -->
+  <section class="card hidden" id="screen-2">
+    <h2 id="incomeHeading">Let's talk about your income</h2>
+    <p class="sub">Answer what applies to you — skip the rest.</p>
+    <div id="incomeQuestions"></div>
+
+    <div class="upload-box">
+      Have a W-2 or 1099 on hand? Upload it and we'll try to read it for you.
+      <br><input type="file" id="docFile" accept=".pdf,.jpg,.jpeg,.png">
+      <select id="docType" style="margin-top:8px;">
+        <option value="payslip">Payslip / employer statement</option>
+        <option value="withholding_cert">Withholding tax certificate</option>
+      </select>
+      <div><button class="btn-secondary" style="margin-top:8px;" onclick="uploadDocument()">Upload &amp; scan</button></div>
+      <div id="docSuggestions"></div>
+    </div>
+
+    <div class="actions">
+      <button class="btn-secondary" onclick="goStep(1)">Back</button>
+      <button class="btn-primary" onclick="goStep(3)">Continue</button>
+    </div>
+  </section>
+
+  <!-- Step 3: Deductions / Expenses (interview style) -->
+  <section class="card hidden" id="screen-3">
+    <h2 id="deductionsHeading">A few questions about deductions</h2>
+    <p class="sub" id="deductionNote"></p>
+    <div id="deductionQuestions"></div>
+    <div class="actions">
+      <button class="btn-secondary" onclick="goStep(2)">Back</button>
+      <button class="btn-primary" onclick="calculateAndReview()">Calculate</button>
+    </div>
+  </section>
+
+  <!-- Step 4: Review -->
+  <section class="card hidden" id="screen-4">
+    <h2>Review your return</h2>
+    <div class="summary-line"><span>Gross income</span><span id="sumGross">$0</span></div>
+    <div class="summary-line"><span>Deductions</span><span id="sumDeductions">$0</span></div>
+    <div class="summary-line"><span>Taxable income</span><span id="sumTaxable">$0</span></div>
+    <div class="summary-line"><span>Effective rate</span><span id="sumRate">0%</span></div>
+    <div class="summary-line total" id="sumFinalRow"><span id="sumFinalLabel">Amount due</span><span id="sumFinal">$0</span></div>
+
+    <div class="validation-panel" id="validationPanel"></div>
+
+    <p class="disclaimer">This is a simplified estimate for demonstration purposes and is not tax advice. Actual liability depends on rules this prototype does not model.</p>
+    <div class="actions">
+      <button class="btn-secondary" onclick="goStep(3)">Back</button>
+      <button class="btn-primary" id="continueToFileBtn" onclick="goStep(5)">Continue to file</button>
+    </div>
+  </section>
+
+  <!-- Step 5: Sign + Submit + Tracking -->
+  <section class="card hidden" id="screen-5">
+    <div id="signBlock">
+      <h2>Sign your return</h2>
+      <p class="ui" style="font-size:0.9rem;color:#4A554F;">Type your full legal name to sign — this is recorded with a timestamp and tied to this exact version of your numbers. If anything changes afterward, you'll need to sign again.</p>
+      <label>Full legal name</label>
+      <input type="text" id="signName">
+      <div class="actions">
+        <button class="btn-secondary" onclick="goStep(4)">Back</button>
+        <button class="btn-primary" onclick="signReturn()">Sign</button>
+      </div>
+      <div class="error hidden" id="err-sign"></div>
+    </div>
+
+    <div id="preSubmit" class="hidden">
+      <h2>File your return</h2>
+      <p class="ui" style="font-size:0.9rem;color:#4A554F;">This sends your return for processing. You'll get a confirmation code once it's accepted, and can track its status right here.</p>
+      <div class="actions">
+        <button class="btn-secondary" onclick="unsign()">Back</button>
+        <button class="btn-primary" onclick="submitReturn()">File now</button>
+      </div>
+    </div>
+
+    <div id="confirmationBlock" class="confirmation hidden">
+      <p>Your return has been accepted.</p>
+      <div class="code" id="confirmationCode"></div>
+      <div class="track-bar">
+        <div class="track-seg" id="seg1"></div>
+        <div class="track-seg" id="seg2"></div>
+        <div class="track-seg" id="seg3"></div>
+      </div>
+      <p class="track-label" id="trackLabel">Checking status…</p>
+      <p class="hint" id="trackNote"></p>
+      <button class="btn-text" onclick="location.reload()">File another return</button>
+    </div>
+  </section>
+
+</main>
+
+<script>
+const API = "/tax";
+const AUTH_API = "/auth";
+let sessionToken = null;
+let pendingSessionToken = null;
+let authMode = "login";
+let state = { taxpayerId: null, returnId: null, taxpayerType: "individual", jurisdiction: "UG_URA" };
+
+const $ = id => document.getElementById(id);
+function money(n){
+  const jurisdiction = state.jurisdiction || "UG_URA";
+  if (jurisdiction === "UG_URA") return "UGX " + Math.round(Number(n)).toLocaleString();
+  return "$" + Number(n).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+// ---------------- Auth ----------------
+
+function toggleAuthMode(){
+  authMode = authMode === "login" ? "register" : "login";
+  $("authLoginForm").classList.toggle("hidden", authMode !== "login");
+  $("authRegisterForm").classList.toggle("hidden", authMode !== "register");
+}
+
+async function doRegister(){
+  hideErr0();
+  try{
+    const res = await fetch(AUTH_API + "/register", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({email: $("regEmail").value.trim(), password: $("regPassword").value})});
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Registration failed");
+    // Log them in immediately to get a session token to attach MFA setup to.
+    const loginRes = await fetch(AUTH_API + "/login", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({email: $("regEmail").value.trim(), password: $("regPassword").value})});
+    const loginData = await loginRes.json();
+    pendingSessionToken = loginData.session_token;
+    showMfaSetup(data.provisioning_uri, data.mfa_secret);
+  }catch(e){ showErr0(e.message); }
+}
+
+function showMfaSetup(uri, secret){
+  $("authLoginForm").classList.add("hidden");
+  $("authRegisterForm").classList.add("hidden");
+  $("mfaSetupForm").classList.remove("hidden");
+  $("authHeading").textContent = "Set up two-factor authentication";
+  $("mfaUriBox").textContent = uri + "\n\n(Manual entry key: " + secret + ")";
+}
+
+async function confirmMfaSetup(){
+  hideErr0();
+  try{
+    const res = await fetch(AUTH_API + "/mfa/enable", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({session_token: pendingSessionToken, code: $("mfaSetupCode").value})});
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Could not verify code");
+    sessionToken = pendingSessionToken;
+    onAuthed();
+  }catch(e){ showErr0(e.message); }
+}
+
+async function doLogin(){
+  hideErr0();
+  try{
+    const res = await fetch(AUTH_API + "/login", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({email: $("authEmail").value.trim(), password: $("authPassword").value})});
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Sign in failed");
+    if (data.mfa_required){
+      pendingSessionToken = data.session_token;
+      $("authLoginForm").classList.add("hidden");
+      $("mfaLoginForm").classList.remove("hidden");
+      $("authHeading").textContent = "Enter your authenticator code";
+    } else {
+      sessionToken = data.session_token;
+      onAuthed();
+    }
+  }catch(e){ showErr0(e.message); }
+}
+
+async function confirmMfaLogin(){
+  hideErr0();
+  try{
+    const res = await fetch(AUTH_API + "/mfa/login-verify", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({session_token: pendingSessionToken, code: $("mfaLoginCode").value})});
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Incorrect code");
+    sessionToken = pendingSessionToken;
+    onAuthed();
+  }catch(e){ showErr0(e.message); }
+}
+
+function signOut(){ location.reload(); }
+function showErr0(msg){ $("err-0").textContent = msg; $("err-0").classList.remove("hidden"); }
+function hideErr0(){ $("err-0").classList.add("hidden"); }
+
+function onAuthed(){
+  $("screen-0").classList.add("hidden");
+  $("stepper").classList.remove("hidden");
+  $("signOutBtn").classList.remove("hidden");
+  goStep(1);
+}
+
+async function authedFetch(path, opts={}){
+  opts.headers = Object.assign({}, opts.headers, {Authorization: "Bearer " + sessionToken});
+  const res = await fetch(path, opts);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || "Something went wrong");
+  return data;
+}
+async function api(method, path, body){
+  return authedFetch(API + path, {
+    method, headers: {"Content-Type":"application/json"},
+    body: body ? JSON.stringify(body) : undefined
+  });
+}
+
+// ---------------- Step navigation ----------------
+
+function setStep(n){
+  document.querySelectorAll(".step").forEach(s => {
+    const step = Number(s.dataset.step);
+    s.classList.toggle("active", step === n);
+    s.classList.toggle("done", step < n);
+  });
+  for (let i=1;i<=5;i++) $("screen-"+i).classList.toggle("hidden", i !== n);
+}
+function goStep(n){ setStep(n); }
+
+function updateFieldLabels(){
+  const isBiz = $("taxpayerType").value === "business";
+  const isUG = $("jurisdiction").value === "UG_URA";
+  $("businessSubtypeWrap").classList.toggle("hidden", !isBiz);
+  $("filingStatusWrap").classList.toggle("hidden", isBiz);
+  $("nameLabel").textContent = isBiz ? "Registered business name" : "Full legal name";
+  $("legalName").placeholder = isBiz ? (isUG ? "Nakato Traders Ltd" : "Acme Trading LLC") : (isUG ? "Jane A. Nakato" : "Jane A. Doe");
+  if (isUG){
+    $("idLabel").textContent = "Tax Identification Number (TIN)";
+    $("taxId").placeholder = "1000123456";
+    $("filingStatusLabel").textContent = "Residency status";
+    $("filingStatus").innerHTML = `<option value="resident">Resident</option><option value="non_resident" disabled>Non-resident (not yet available — pending verification)</option>`;
+  } else {
+    $("idLabel").textContent = isBiz ? "Employer Identification Number (EIN)" : "Social Security Number";
+    $("taxId").placeholder = isBiz ? "00-0000000" : "000-00-0000";
+    $("filingStatusLabel").textContent = "Filing status";
+    $("filingStatus").innerHTML = `<option value="single">Single</option><option value="married_joint">Married, filing jointly</option><option value="head_of_household">Head of household</option>`;
+  }
+  const docTypeSelect = $("docType");
+  if (docTypeSelect){
+    docTypeSelect.innerHTML = isUG
+      ? `<option value="payslip">Payslip / employer statement</option><option value="withholding_cert">Withholding tax certificate</option>`
+      : `<option value="w2">W-2</option><option value="1099">1099</option>`;
+  }
+}
+$("taxpayerType").addEventListener("change", updateFieldLabels);
+$("jurisdiction").addEventListener("change", updateFieldLabels);
+updateFieldLabels();
+
+// ---------------- Interview-style questions ----------------
+
+const UG_INDIVIDUAL_INCOME_Q = [
+  {category:"Employment income", text:"Did you earn employment income (salary/wages) this year?"},
+  {category:"Business/trading income", text:"Did you earn income from a trade or business you run personally?"},
+  {category:"Rental income", text:"Did you earn rental income from property?"},
+  {category:"Other income", text:"Any other income — commissions, freelance work, interest?"},
+];
+const US_INDIVIDUAL_INCOME_Q = [
+  {category:"Wages (W-2)", text:"Did you receive a W-2 from an employer this year?"},
+  {category:"Self-employment income", text:"Did you earn any self-employment or freelance income?"},
+  {category:"Interest / dividends", text:"Did you earn interest or dividends from a bank or investment account?"},
+  {category:"Other income", text:"Any other income — gig work, rental income, prizes?"},
+];
+const BUSINESS_INCOME_Q = [
+  {category:"Business revenue", text:"What was your total business revenue (turnover) this year?", always:true},
+];
+const UG_INDIVIDUAL_DEDUCTION_Q = [
+  {category:"NSSF contribution", text:"Did you make voluntary NSSF contributions beyond the mandatory employer deduction?"},
+  {category:"Mortgage interest relief", text:"Did you pay mortgage interest on an owner-occupied home loan?"},
+  {category:"Charitable donations", text:"Did you donate to a URA-exempt charitable organization?"},
+];
+const US_INDIVIDUAL_DEDUCTION_Q = [
+  {category:"Mortgage interest", text:"Did you pay mortgage interest on a home this year?"},
+  {category:"Charitable giving", text:"Did you make any charitable donations?"},
+  {category:"State/local taxes", text:"Did you pay state or local taxes worth deducting?"},
+  {category:"Medical expenses", text:"Did you have significant medical expenses?"},
+];
+const BUSINESS_EXPENSE_Q = [
+  {category:"Cost of goods sold", text:"What did the goods or materials you sold cost you?"},
+  {category:"Rent", text:"Did you pay rent for a business space?"},
+  {category:"Payroll", text:"Did you pay any employees or contractors?"},
+  {category:"Supplies", text:"Did you buy business supplies or equipment?"},
+];
+
+function renderQuestions(containerId, questions, itemKind){
+  const el = $(containerId);
+  el.innerHTML = "";
+  questions.forEach((q, idx) => {
+    const qid = containerId + "_" + idx;
+    const wrap = document.createElement("div");
+    wrap.className = "question";
+    wrap.innerHTML = `
+      <div class="qtext">${q.text}</div>
+      <div class="yn ${q.always ? 'hidden' : ''}">
+        <button type="button" data-val="yes">Yes</button>
+        <button type="button" data-val="no">No</button>
+      </div>
+      <div class="amount-reveal ${q.always ? '' : 'hidden'}">
+        <input type="number" placeholder="Amount" id="${qid}_amt">
+        <button class="btn-secondary" type="button" onclick="commitAnswer('${qid}','${q.category}','${itemKind}')">Add</button>
+      </div>
+    `;
+    el.appendChild(wrap);
+    if (!q.always){
+      const yesBtn = wrap.querySelector('[data-val="yes"]');
+      const noBtn = wrap.querySelector('[data-val="no"]');
+      const reveal = wrap.querySelector(".amount-reveal");
+      yesBtn.onclick = () => { yesBtn.classList.add("selected"); noBtn.classList.remove("selected"); reveal.classList.remove("hidden"); };
+      noBtn.onclick = () => { noBtn.classList.add("selected"); yesBtn.classList.remove("selected"); reveal.classList.add("hidden"); };
+    }
+  });
+}
+
+async function commitAnswer(qid, category, itemKind){
+  const amt = parseFloat($(qid + "_amt").value);
+  if (!amt || amt <= 0) return;
+  await api("POST", `/returns/${state.returnId}/line-items`, {item_kind: itemKind, category, amount: amt});
+  $(qid + "_amt").value = "";
+  $(qid + "_amt").disabled = true;
+  $(qid + "_amt").nextElementSibling.textContent = "Added ✓";
+  $(qid + "_amt").nextElementSibling.disabled = true;
+}
+
+function setupInterview(){
+  const isBiz = state.taxpayerType === "business";
+  const isUG = state.jurisdiction === "UG_URA";
+  renderQuestions("incomeQuestions", isBiz ? BUSINESS_INCOME_Q : (isUG ? UG_INDIVIDUAL_INCOME_Q : US_INDIVIDUAL_INCOME_Q), "income");
+  $("incomeHeading").textContent = isBiz ? "Let's talk about your revenue" : "Let's talk about your income";
+  renderQuestions("deductionQuestions", isBiz ? BUSINESS_EXPENSE_Q : (isUG ? UG_INDIVIDUAL_DEDUCTION_Q : US_INDIVIDUAL_DEDUCTION_Q), isBiz ? "expense" : "deduction");
+  $("deductionsHeading").textContent = isBiz ? "A few questions about expenses" : "A few questions about deductions";
+  if (isBiz){
+    $("deductionNote").textContent = isUG
+      ? "If your turnover is UGX 150,000,000 or less, sole proprietors are taxed under presumptive tax on turnover — expenses won't change what's owed in that case, but tracking them is still good practice."
+      : "Sole proprietors: profit after expenses is taxed here at the self-employment rate; income tax on that profit is filed on your personal return.";
+  } else {
+    $("deductionNote").textContent = isUG
+      ? "Uganda's tax-free threshold already covers most individual relief — these are the main additional deductions URA allows."
+      : "You'll automatically get the larger of your itemized deductions or the standard deduction — no need to total those yourself.";
+  }
+}
+
+// ---------------- Registration flow ----------------
+
+async function startReturn(){
+  $("err-1").classList.add("hidden");
+  state.taxpayerType = $("taxpayerType").value;
+  state.jurisdiction = $("jurisdiction").value;
+  const body = {
+    taxpayer_type: state.taxpayerType,
+    legal_name: $("legalName").value.trim(),
+    tax_id: $("taxId").value.trim(),
+    email: $("email").value.trim(),
+    jurisdiction: state.jurisdiction,
+  };
+  if (state.taxpayerType === "business") body.entity_subtype = $("entitySubtype").value;
+  if (!body.legal_name || !body.tax_id || !body.email){
+    $("err-1").textContent = "Please fill in all fields.";
+    $("err-1").classList.remove("hidden");
+    return;
+  }
+  try{
+    const tp = await api("POST", "/taxpayers", body);
+    state.taxpayerId = tp.id;
+    const retBody = { taxpayer_id: tp.id, tax_year: Number($("taxYear").value) };
+    if (state.taxpayerType === "individual") retBody.filing_status = $("filingStatus").value;
+    const ret = await api("POST", "/returns", retBody);
+    state.returnId = ret.id;
+    setupInterview();
+    goStep(2);
+  }catch(e){
+    $("err-1").textContent = e.message;
+    $("err-1").classList.remove("hidden");
+  }
+}
+
+// ---------------- Document upload ----------------
+
+async function uploadDocument(){
+  const fileInput = $("docFile");
+  if (!fileInput.files.length) return;
+  const fd = new FormData();
+  fd.append("doc_type", $("docType").value);
+  fd.append("file", fileInput.files[0]);
+  try{
+    const data = await authedFetch(`${API}/returns/${state.returnId}/documents`, {method:"POST", body: fd});
+    const box = $("docSuggestions");
+    box.innerHTML = "";
+    (data.suggested_items || []).forEach((item, idx) => {
+      const div = document.createElement("div");
+      div.className = "suggestion-card";
+      div.innerHTML = `
+        <strong>${item.category}</strong>
+        <div class="note">${item.note || ""}</div>
+        <div class="row">
+          <input type="number" placeholder="Amount" id="suggest_${idx}">
+          <button class="btn-secondary" onclick="confirmSuggestion(${idx}, '${item.category}', '${item.item_kind}')">Add to my return</button>
+        </div>`;
+      box.appendChild(div);
+    });
+  }catch(e){ alert(e.message); }
+}
+
+async function confirmSuggestion(idx, category, itemKind){
+  const amt = parseFloat($("suggest_" + idx).value);
+  if (!amt || amt <= 0) return;
+  await api("POST", `/returns/${state.returnId}/line-items`, {item_kind: itemKind, category, amount: amt});
+  $("suggest_" + idx).disabled = true;
+}
+
+// ---------------- Calculate, review, validate ----------------
+
+async function calculateAndReview(){
+  const ret = await api("POST", `/returns/${state.returnId}/calculate`);
+  const calc = ret.latest_calculation;
+  $("sumGross").textContent = money(calc.gross_income);
+  $("sumDeductions").textContent = money(calc.total_deductions);
+  $("sumTaxable").textContent = money(calc.taxable_income);
+  $("sumRate").textContent = calc.effective_rate + "%";
+  if (calc.refund_amount > 0){
+    $("sumFinalLabel").textContent = "Estimated refund";
+    $("sumFinal").textContent = money(calc.refund_amount);
+    $("sumFinal").className = "refund";
+  } else {
+    $("sumFinalLabel").textContent = "Amount due";
+    $("sumFinal").textContent = money(calc.amount_due);
+    $("sumFinal").className = "due";
+  }
+  renderValidation(ret.validation);
+  goStep(4);
+}
+
+function renderValidation(issues){
+  const panel = $("validationPanel");
+  panel.innerHTML = "";
+  const hasError = issues.some(i => i.severity === "error");
+  if (issues.length === 0){
+    panel.innerHTML = `<div class="issue" style="background:#E5EDE7;color:var(--good);">No issues found — ready to file.</div>`;
+  } else {
+    issues.forEach(i => {
+      const div = document.createElement("div");
+      div.className = "issue " + i.severity;
+      div.textContent = (i.severity === "error" ? "⚠ " : "ⓘ ") + i.message;
+      panel.appendChild(div);
+    });
+  }
+  $("continueToFileBtn").disabled = hasError;
+}
+
+// ---------------- Sign, submit + tracking ----------------
+
+async function signReturn(){
+  $("err-sign").classList.add("hidden");
+  const name = $("signName").value.trim();
+  if (!name){ $("err-sign").textContent = "Enter your full legal name."; $("err-sign").classList.remove("hidden"); return; }
+  try{
+    await api("POST", `/returns/${state.returnId}/sign`, {typed_name: name});
+    $("signBlock").classList.add("hidden");
+    $("preSubmit").classList.remove("hidden");
+  }catch(e){ $("err-sign").textContent = e.message; $("err-sign").classList.remove("hidden"); }
+}
+function unsign(){ $("preSubmit").classList.add("hidden"); $("signBlock").classList.remove("hidden"); }
+
+async function submitReturn(){
+  try{
+    const ret = await api("POST", `/returns/${state.returnId}/submit`);
+    $("preSubmit").classList.add("hidden");
+    $("confirmationCode").textContent = ret.submission.confirmation_code;
+    $("confirmationBlock").classList.remove("hidden");
+    pollTracking();
+  }catch(e){ alert(e.message); }
+}
+
+async function pollTracking(){
+  try{
+    const t = await api("GET", `/returns/${state.returnId}/track`);
+    const stageIndex = {accepted:1, processing:2, completed:3}[t.stage] || 1;
+    for (let i=1;i<=3;i++) $("seg"+i).classList.toggle("filled", i <= stageIndex);
+    $("trackLabel").textContent = t.label;
+    $("trackNote").textContent = t.note;
+    if (t.stage !== "completed") setTimeout(pollTracking, 15000);
+  }catch(e){ /* tracking is best-effort */ }
+}
+
+setStep(1);
+</script>
+
+</body>
+</html>
