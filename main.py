@@ -1,16 +1,8 @@
 """
-main.py — Standalone runnable entrypoint for the tax-filing app.
+main.py — Standalone runnable entrypoint for UNG-PROMET.
 
-Run with:
-    pip install fastapi uvicorn pydantic --break-system-packages
-    uvicorn main:app --reload
-
-Then open http://127.0.0.1:8000 in a browser.
-
-To fold this into the existing platform instead of running it standalone,
-skip this file and just `include_router(tax_filing.router)` on the main
-app, the same way the other *_ops.py / *_replenishment.py modules are
-mounted.
+UNG-PROMET — Public Revenue Operations, Management & Electronic Taxation.
+Legacy UNG-TAX technical identifiers and API behavior are preserved for compatibility.
 """
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -22,7 +14,7 @@ import auth
 import tax_filing
 import tax_advanced
 
-app = FastAPI(title="Tax Filing", version="0.2.0")
+app = FastAPI(title="UNG-PROMET", description="Public Revenue Operations, Management & Electronic Taxation", version="0.2.0")
 _origins = [x.strip() for x in os.environ.get("TAX_CORS_ORIGINS", "http://localhost:8000").split(",") if x.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=_origins, allow_credentials=True, allow_methods=["GET","POST","PUT","PATCH","DELETE"], allow_headers=["Authorization","Content-Type"])
 app.include_router(auth.router)
@@ -38,4 +30,4 @@ def index():
 
 @app.get("/health")
 def health():
-    return {"status":"ok","service":"tax-filing","version":"0.2.0","live_transmission":False}
+    return {"status":"ok","service":"ung-promet","legacy_service":"tax-filing","version":"0.2.0","live_transmission":False}
