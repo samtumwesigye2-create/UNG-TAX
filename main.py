@@ -3,6 +3,12 @@ main.py — Standalone runnable entrypoint for UNG-PROMET.
 
 UNG-PROMET — Public Revenue Operations, Management & Electronic Taxation.
 Legacy UNG-TAX technical identifiers and API behavior are preserved for compatibility.
+
+Run with:
+    pip install -r requirements.txt
+    uvicorn main:app --reload
+
+Then open http://127.0.0.1:8000 in a browser.
 """
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -24,9 +30,11 @@ app.include_router(tax_advanced.router)
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+
 @app.get("/")
 def index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+
 
 @app.get("/health")
 def health():
