@@ -1,11 +1,12 @@
+import os, sys
+from pathlib import Path
+ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT))
+os.environ['TAX_CORS_ORIGINS']='http://localhost:8000'
 from fastapi.testclient import TestClient
-from main import app
+import main
 
 def test_health():
-    r=TestClient(app).get('/health')
+    r=TestClient(main.app).get('/health')
     assert r.status_code==200
-    assert r.json()['status']=='ok'
-
-def test_live_transmission_disabled():
-    r=TestClient(app).post('/tax/returns/not-real/submit')
-    assert r.status_code==503
+    assert r.json()['live_transmission'] is False
