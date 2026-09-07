@@ -1,8 +1,12 @@
-# UNG-TAX
+# UNG-PROMET
 
-Independent tax filing service for the UNG ecosystem.
+**Public Revenue Operations, Management & Electronic Taxation**
 
-Current build provides authenticated application wiring, return creation/read/calculation workflow, effective-dated Uganda resident PAYE calculations, NSSF calculations, corporation-tax calculation, advanced-integration capability reporting, health endpoints, restricted CORS, and Railway startup configuration.
+UNG-PROMET is the UNG ecosystem's revenue and taxation platform. It provides authenticated tax-return creation/read/calculation workflows, effective-dated Uganda resident PAYE calculations, NSSF calculations, corporation-tax calculation, advanced-integration capability reporting, health endpoints, restricted CORS, and Railway startup configuration.
+
+## Compatibility
+
+The existing repository, Railway project/service IDs, API paths, environment-variable names, and legacy `UNG-TAX` technical identifiers remain in place during the naming migration so integrations continue to work. `UNG-TAX` is the legacy technical identity; `UNG-PROMET` is the operational system name.
 
 ## 2026 Uganda rules
 
