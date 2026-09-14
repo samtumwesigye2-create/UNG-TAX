@@ -1,4 +1,4 @@
-# UNG-TAX 2026 Rule Handoff
+# URA-PROMET 2026 Rule Handoff
 
 ## Effective-dated resident PAYE
 
@@ -43,4 +43,4 @@ Important warning: as of 2026-09-06, the URA PAYE webpage still displays the pre
 - Live URA filing transmission remains disabled.
 - Non-resident 2026 PAYE is intentionally disabled until separately verified.
 - Do not commit `tax_filing.db`, `secret.key`, credentials, authority tokens, or encryption material.
-- Future production work should move persistence to PostgreSQL, replace local auth with UNG-JANUS, publish lifecycle events through UNG-PULSAR, and enable authority connectors only after contract/credential acceptance testing.
+- Future production work should continue PostgreSQL persistence, replace local auth with UNG-JANUS when integration is ready, publish lifecycle events through UNG-PULSAR, and enable authority connectors only after contract/credential acceptance testing.
