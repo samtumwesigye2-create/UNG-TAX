@@ -27,6 +27,8 @@ def taxpayer_portal():return FileResponse(os.path.join(STATIC_DIR,"taxpayer.html
 def revenue_staff_portal():return FileResponse(os.path.join(STATIC_DIR,"revenue-staff.html"))
 @app.get("/revenue",include_in_schema=False)
 def revenue_admin_portal():return FileResponse(os.path.join(STATIC_DIR,"revenue.html"))
+@app.get("/operations",include_in_schema=False)
+def revenue_operations_workspace():return FileResponse(os.path.join(STATIC_DIR,"ops-workspace.html"))
 @app.get("/health")
 def health():
-    return {"status":"ok","service":"ura-promet","legacy_service":"UNG-TAX","version":"0.7.0","ui":"three-role-portals","role_portals":["taxpayer","revenue_staff","revenue_admin"],"mfa":"email-otp" if auth._smtp_ready() else "totp-fallback","email_otp_configured":auth._smtp_ready(),"live_transmission":False,"operations_api":"/ops"}
+    return {"status":"ok","service":"ura-promet","legacy_service":"UNG-TAX","version":"0.7.0","ui":"operational-workspaces","role_portals":["taxpayer","revenue_staff","revenue_admin"],"mfa":"email-otp" if auth._smtp_ready() else "totp-fallback","email_otp_configured":auth._smtp_ready(),"live_transmission":False,"operations_api":"/ops","operations_workspace":"/operations"}
