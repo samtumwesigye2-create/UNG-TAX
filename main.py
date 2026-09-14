@@ -3,12 +3,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
-import auth, password_reset, tax_filing, tax_advanced
+import auth, password_reset, tax_filing, tax_advanced, ops
 
-app=FastAPI(title="URA-PROMET",description="Public Revenue Operations, Management & Electronic Taxation",version="0.6.0")
+app=FastAPI(title="URA-PROMET",description="Public Revenue Operations, Management & Electronic Taxation",version="0.7.0")
 _origins=[x.strip() for x in os.environ.get("TAX_CORS_ORIGINS","http://localhost:8000").split(",") if x.strip()]
 app.add_middleware(CORSMiddleware,allow_origins=_origins,allow_credentials=True,allow_methods=["GET","POST","PUT","PATCH","DELETE"],allow_headers=["Authorization","Content-Type"])
-app.include_router(auth.router); app.include_router(password_reset.router); app.include_router(tax_filing.router); app.include_router(tax_advanced.router)
+app.include_router(auth.router); app.include_router(password_reset.router); app.include_router(tax_filing.router); app.include_router(tax_advanced.router); app.include_router(ops.router)
 STATIC_DIR=os.path.join(os.path.dirname(os.path.abspath(__file__)),"static"); app.mount("/static",StaticFiles(directory=STATIC_DIR),name="static")
 
 def _render_wizard():
@@ -29,4 +29,4 @@ def revenue_staff_portal():return FileResponse(os.path.join(STATIC_DIR,"revenue-
 def revenue_admin_portal():return FileResponse(os.path.join(STATIC_DIR,"revenue.html"))
 @app.get("/health")
 def health():
-    return {"status":"ok","service":"ura-promet","legacy_service":"UNG-TAX","version":"0.6.0","ui":"three-role-portals","role_portals":["taxpayer","revenue_staff","revenue_admin"],"mfa":"email-otp" if auth._smtp_ready() else "totp-fallback","email_otp_configured":auth._smtp_ready(),"live_transmission":False}
+    return {"status":"ok","service":"ura-promet","legacy_service":"UNG-TAX","version":"0.7.0","ui":"three-role-portals","role_portals":["taxpayer","revenue_staff","revenue_admin"],"mfa":"email-otp" if auth._smtp_ready() else "totp-fallback","email_otp_configured":auth._smtp_ready(),"live_transmission":False,"operations_api":"/ops"}
