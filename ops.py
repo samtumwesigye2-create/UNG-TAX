@@ -16,8 +16,12 @@ from ops_models import (
     AssessmentCreate,
     AssessmentPatch,
     CompliancePatch,
+    InstallmentCreate,
+    InstallmentPatch,
     NoteIn,
+    PaymentAllocationIn,
     ReturnReviewPatch,
+    ReversalIn,
     TaxpayerPatch,
 )
 from ops_store import get_ops_db
@@ -60,6 +64,17 @@ def _assessment_with_lines(db, row: dict) -> dict:
         "SELECT * FROM assessment_lines WHERE assessment_id=? ORDER BY created_at,id",
         (out["id"],),
     )
+    return out
+
+
+def _liability_view(db, row: dict) -> dict:
+    out = dict(row)
+    allocated = db.fetchone(
+        "SELECT COALESCE(SUM(amount),0) AS total FROM payment_allocations WHERE liability_id=?",
+        (out["id"],),
+    )["total"]
+    out["allocated_amount"] = allocated
+    out["open_balance"] = out["original_amount"] - allocated
     return out
 
 
@@ -309,3 +324,102 @@ def patch_compliance(taxpayer_id: str, body: CompliancePatch, user=Depends(_reve
                       before=current if before else {}, after=after_out, reason=body.notes,
                       correlation_id=secrets.token_hex(8))
     return after_out
+
+
+@router.get("/liabilities")
+def list_liabilities(taxpayer_id: str | None = None, status: str | None = None, user=Depends(_revenue_user)):
+    clauses, params = [], []
+    if taxpayer_id:
+        clauses.append("taxpayer_id=?"); params.append(taxpayer_id)
+    if status:
+        clauses.append("status=?"); params.append(status)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    with get_ops_db() as db:
+        rows = db.fetchall(f"SELECT * FROM liabilities{where} ORDER BY updated_at DESC LIMIT 250", params)
+        items = [_liability_view(db, row) for row in rows]
+    return {"items": items}
+
+
+@router.post("/payments/allocations", status_code=201)
+def create_payment_allocation(body: PaymentAllocationIn, user=Depends(_revenue_user)):
+    allocation_id = secrets.token_hex(16)
+    now = time.time()
+    with get_ops_db() as db:
+        liability = db.fetchone("SELECT * FROM liabilities WHERE id=?", (body.liability_id,))
+        if not liability:
+            raise HTTPException(404, "Liability not found")
+        view = _liability_view(db, liability)
+        if body.amount > view["open_balance"] + 1e-9:
+            raise HTTPException(409, "Allocation exceeds open liability balance")
+        db.execute(
+            "INSERT INTO payment_allocations(id,taxpayer_id,liability_id,amount,payment_reference,reversal_of,reason,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+            (allocation_id, body.taxpayer_id, body.liability_id, body.amount, body.payment_reference, None, body.reason, user["id"], now),
+        )
+        row = db.fetchone("SELECT * FROM payment_allocations WHERE id=?", (allocation_id,))
+    write_audit_event(actor_id=user["id"], actor_role=user["role"], action="payment.allocate",
+                      entity_type="payment_allocation", entity_id=allocation_id, taxpayer_id=body.taxpayer_id,
+                      before={}, after=row, reason=body.reason, correlation_id=secrets.token_hex(8))
+    return row
+
+
+@router.post("/payments/{allocation_id}/reverse", status_code=201)
+def reverse_payment_allocation(allocation_id: str, body: ReversalIn, user=Depends(_revenue_user)):
+    reversal_id = secrets.token_hex(16)
+    now = time.time()
+    with get_ops_db() as db:
+        original = db.fetchone("SELECT * FROM payment_allocations WHERE id=?", (allocation_id,))
+        if not original:
+            raise HTTPException(404, "Payment allocation not found")
+        already = db.fetchone("SELECT id FROM payment_allocations WHERE reversal_of=?", (allocation_id,))
+        if already:
+            raise HTTPException(409, "Payment allocation already reversed")
+        db.execute(
+            "INSERT INTO payment_allocations(id,taxpayer_id,liability_id,amount,payment_reference,reversal_of,reason,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+            (reversal_id, original["taxpayer_id"], original["liability_id"], -original["amount"], original["payment_reference"], allocation_id, body.reason, user["id"], now),
+        )
+        reversal = db.fetchone("SELECT * FROM payment_allocations WHERE id=?", (reversal_id,))
+    write_audit_event(actor_id=user["id"], actor_role=user["role"], action="payment.reverse",
+                      entity_type="payment_allocation", entity_id=reversal_id, taxpayer_id=original["taxpayer_id"],
+                      before=original, after=reversal, reason=body.reason, correlation_id=secrets.token_hex(8))
+    return reversal
+
+
+@router.post("/installments", status_code=201)
+def create_installment_plan(body: InstallmentCreate, user=Depends(_revenue_user)):
+    plan_id = secrets.token_hex(16)
+    now = time.time()
+    if body.liability_id:
+        with get_ops_db() as db:
+            liability = db.fetchone("SELECT * FROM liabilities WHERE id=?", (body.liability_id,))
+            if not liability:
+                raise HTTPException(404, "Liability not found")
+            open_balance = _liability_view(db, liability)["open_balance"]
+            if body.total_amount > open_balance + 1e-9:
+                raise HTTPException(409, "Installment total exceeds open liability balance")
+    with get_ops_db() as db:
+        db.execute(
+            "INSERT INTO installment_plans(id,taxpayer_id,liability_id,total_amount,installment_count,frequency,start_date,status,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (plan_id, body.taxpayer_id, body.liability_id, body.total_amount, body.installment_count, body.frequency, body.start_date, "active", user["id"], now, now),
+        )
+        row = db.fetchone("SELECT * FROM installment_plans WHERE id=?", (plan_id,))
+    write_audit_event(actor_id=user["id"], actor_role=user["role"], action="installment.create",
+                      entity_type="installment_plan", entity_id=plan_id, taxpayer_id=body.taxpayer_id,
+                      before={}, after=row, correlation_id=secrets.token_hex(8))
+    return row
+
+
+@router.patch("/installments/{plan_id}")
+def patch_installment_plan(plan_id: str, body: InstallmentPatch, user=Depends(_revenue_user)):
+    allowed = {"active", "suspended", "completed", "cancelled", "archived"}
+    if body.status not in allowed:
+        raise HTTPException(422, "Invalid installment status")
+    with get_ops_db() as db:
+        before = db.fetchone("SELECT * FROM installment_plans WHERE id=?", (plan_id,))
+        if not before:
+            raise HTTPException(404, "Installment plan not found")
+        db.execute("UPDATE installment_plans SET status=?,updated_at=? WHERE id=?", (body.status, time.time(), plan_id))
+        after = db.fetchone("SELECT * FROM installment_plans WHERE id=?", (plan_id,))
+    write_audit_event(actor_id=user["id"], actor_role=user["role"], action="installment.update",
+                      entity_type="installment_plan", entity_id=plan_id, taxpayer_id=before["taxpayer_id"],
+                      before=before, after=after, reason=body.reason, correlation_id=secrets.token_hex(8))
+    return after
