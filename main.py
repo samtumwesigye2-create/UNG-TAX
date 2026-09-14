@@ -3,12 +3,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
-import auth, password_reset, tax_filing, tax_advanced, ops
+import auth, password_reset, tax_filing, tax_advanced, ops, ops_cases_notices, ops_reports
 
 app=FastAPI(title="URA-PROMET",description="Public Revenue Operations, Management & Electronic Taxation",version="0.7.0")
 _origins=[x.strip() for x in os.environ.get("TAX_CORS_ORIGINS","http://localhost:8000").split(",") if x.strip()]
 app.add_middleware(CORSMiddleware,allow_origins=_origins,allow_credentials=True,allow_methods=["GET","POST","PUT","PATCH","DELETE"],allow_headers=["Authorization","Content-Type"])
-app.include_router(auth.router); app.include_router(password_reset.router); app.include_router(tax_filing.router); app.include_router(tax_advanced.router); app.include_router(ops.router)
+app.include_router(auth.router); app.include_router(password_reset.router); app.include_router(tax_filing.router); app.include_router(tax_advanced.router); app.include_router(ops.router); app.include_router(ops_cases_notices.router); app.include_router(ops_reports.router)
 STATIC_DIR=os.path.join(os.path.dirname(os.path.abspath(__file__)),"static"); app.mount("/static",StaticFiles(directory=STATIC_DIR),name="static")
 
 def _render_wizard():
