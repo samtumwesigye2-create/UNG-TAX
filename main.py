@@ -3,9 +3,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
-import auth, auth_store, password_reset, tax_filing, tax_advanced, ops, ops_cases_notices, ops_reports
+import auth, auth_migrate, auth_store, password_reset, tax_filing, tax_advanced, ops, ops_cases_notices, ops_reports
 from password_reset_ui import inject_password_reset_ui
 
+AUTH_MIGRATION_RESULT=auth_migrate.migrate_sqlite_auth_to_postgres()
 app=FastAPI(title="URA-PROMET",description="Public Revenue Operations, Management & Electronic Taxation",version="0.7.3")
 _origins=[x.strip() for x in os.environ.get("TAX_CORS_ORIGINS","http://localhost:8000").split(",") if x.strip()]
 app.add_middleware(CORSMiddleware,allow_origins=_origins,allow_credentials=True,allow_methods=["GET","POST","PUT","PATCH","DELETE"],allow_headers=["Authorization","Content-Type"])
