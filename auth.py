@@ -1,12 +1,13 @@
 """auth.py — Secure authentication for URA-PROMET."""
-import base64, hashlib, hmac, os, secrets, smtplib, sqlite3, ssl, struct, time
+import base64, hashlib, hmac, os, secrets, smtplib, ssl, struct, time
 from collections import defaultdict, deque
 from email.message import EmailMessage
 from threading import Lock
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
+import auth_store
 
-DB=os.path.join(os.path.dirname(os.path.abspath(__file__)),"tax_filing.db"); KEY_FILE=os.path.join(os.path.dirname(os.path.abspath(__file__)),"secret.key")
+KEY_FILE=os.path.join(os.path.dirname(os.path.abspath(__file__)),"secret.key")
 SESSION_TTL_SECONDS=60*60*8; OTP_TTL_SECONDS=int(os.getenv("PROMET_EMAIL_OTP_TTL_SECONDS","600")); OTP_MAX_ATTEMPTS=int(os.getenv("PROMET_EMAIL_OTP_MAX_ATTEMPTS","6"))
 router=APIRouter(prefix="/auth",tags=["auth"])
 SMTP_HOST=os.getenv("PROMET_SMTP_HOST","").strip(); SMTP_PORT=int(os.getenv("PROMET_SMTP_PORT","587")); SMTP_USERNAME=os.getenv("PROMET_SMTP_USERNAME","").strip(); SMTP_PASSWORD=os.getenv("PROMET_SMTP_PASSWORD","").strip(); SMTP_FROM=os.getenv("PROMET_SMTP_FROM",SMTP_USERNAME).strip(); SMTP_STARTTLS=os.getenv("PROMET_SMTP_STARTTLS","true").strip().lower() not in {"0","false","no"}
@@ -16,10 +17,8 @@ def role_for_email(email:str)->str:
     normalized=(email or "").strip().lower()
     admins={x.strip().lower() for x in os.getenv("PROMET_ADMIN_EMAILS","").split(",") if x.strip()}
     staff={x.strip().lower() for x in os.getenv("PROMET_STAFF_EMAILS","").split(",") if x.strip()}
-    if normalized in admins:
-        return "revenue_admin"
-    if normalized in staff:
-        return "revenue_staff"
+    if normalized in admins:return "revenue_admin"
+    if normalized in staff:return "revenue_staff"
     return "taxpayer"
 
 def portal_for_role(role:str)->str:
@@ -36,11 +35,10 @@ def _check_login_rate(key):
         q.append(now)
 def _clear_login_rate(key):
     with _LOGIN_LOCK:_LOGIN_ATTEMPTS.pop(key,None)
-def db():
-    c=sqlite3.connect(DB,timeout=30,isolation_level=None); c.row_factory=sqlite3.Row; c.execute("PRAGMA busy_timeout=30000"); return c
-def init():
-    c=db(); c.execute("BEGIN IMMEDIATE"); c.execute("CREATE TABLE IF NOT EXISTS auth_users(id TEXT PRIMARY KEY,email TEXT NOT NULL UNIQUE,password_hash TEXT NOT NULL,password_salt TEXT NOT NULL,mfa_secret TEXT NOT NULL,mfa_enabled INTEGER NOT NULL DEFAULT 0,created_at REAL NOT NULL)"); c.execute("CREATE TABLE IF NOT EXISTS auth_sessions(token TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES auth_users(id),mfa_verified INTEGER NOT NULL DEFAULT 0,created_at REAL NOT NULL,expires_at REAL NOT NULL)"); c.execute("CREATE TABLE IF NOT EXISTS auth_email_otp(session_token TEXT PRIMARY KEY,user_id TEXT NOT NULL,code_hash TEXT NOT NULL,expires_at REAL NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,created_at REAL NOT NULL)"); c.execute("COMMIT"); c.close()
+def db(): return auth_store.db()
+def init(): auth_store.init_schema()
 init()
+
 def _load_or_create_key():
     k=os.environ.get("TAX_FIELD_KEY_B64","").strip()
     if k:return base64.urlsafe_b64decode(k.encode())
@@ -96,8 +94,12 @@ class MfaIn(BaseModel):session_token:str;code:str
 def register(body:RegisterIn):
     if len(body.password)<10:raise HTTPException(400,"Password must be at least 10 characters")
     c=db(); uid=secrets.token_hex(16); secret=generate_mfa_secret(); ph,salt=hash_password(body.password)
-    try:c.execute("INSERT INTO auth_users VALUES(?,?,?,?,?,0,?)",(uid,body.email.lower().strip(),ph,salt,secret,time.time()))
-    except sqlite3.IntegrityError:c.close();raise HTTPException(409,"Account already exists")
+    try:
+        c.execute("INSERT INTO auth_users VALUES(?,?,?,?,?,0,?)",(uid,body.email.lower().strip(),ph,salt,secret,time.time()))
+    except Exception as exc:
+        c.close()
+        if exc.__class__.__name__ in {"IntegrityError","UniqueViolation"}:raise HTTPException(409,"Account already exists")
+        raise
     c.close(); return {"status":"registered","role":"taxpayer"}
 @router.post("/login")
 def login(body:LoginIn):
