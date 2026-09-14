@@ -10,7 +10,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 import auth
 from ops_audit import write_audit_event
 from ops_auth import require_revenue_user
-from ops_models import NoteIn, ReturnReviewPatch, TaxpayerPatch, RETURN_TRANSITIONS
+from ops_models import (
+    ASSESSMENT_STATES,
+    RETURN_TRANSITIONS,
+    AssessmentCreate,
+    AssessmentPatch,
+    CompliancePatch,
+    NoteIn,
+    ReturnReviewPatch,
+    TaxpayerPatch,
+)
 from ops_store import get_ops_db
 
 router = APIRouter(prefix="/ops", tags=["revenue-operations"])
@@ -36,6 +45,21 @@ def _profile(row: dict) -> dict:
 def _return(row: dict) -> dict:
     out = dict(row)
     out["payload"] = _json(out.pop("payload_json", "{}"), {})
+    return out
+
+
+def _compliance(row: dict) -> dict:
+    out = dict(row)
+    out["risk_flags"] = _json(out.pop("risk_flags_json", "[]"), [])
+    return out
+
+
+def _assessment_with_lines(db, row: dict) -> dict:
+    out = dict(row)
+    out["lines"] = db.fetchall(
+        "SELECT * FROM assessment_lines WHERE assessment_id=? ORDER BY created_at,id",
+        (out["id"],),
+    )
     return out
 
 
@@ -167,3 +191,121 @@ def review_return(return_id: str, body: ReturnReviewPatch, user=Depends(_revenue
         correlation_id=secrets.token_hex(8),
     )
     return _return(after)
+
+
+@router.post("/assessments", status_code=201)
+def create_assessment(body: AssessmentCreate, user=Depends(_revenue_user)):
+    for line in body.adjustments:
+        if line.amount != 0 and not (line.reason or "").strip():
+            raise HTTPException(422, "Adjustment reason is required")
+    assessment_id = secrets.token_hex(16)
+    now = time.time()
+    adjustments_total = sum(line.amount for line in body.adjustments)
+    total = body.principal + body.penalty + body.interest + adjustments_total
+    with get_ops_db() as db:
+        db.execute(
+            "INSERT INTO assessments(id,taxpayer_id,return_id,status,principal,penalty,interest,total,reason,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (assessment_id, body.taxpayer_id, body.return_id, "draft", body.principal, body.penalty, body.interest, total, body.reason, user["id"], now, now),
+        )
+        for line in body.adjustments:
+            db.execute(
+                "INSERT INTO assessment_lines(id,assessment_id,line_type,amount,reason,created_at) VALUES(?,?,?,?,?,?)",
+                (secrets.token_hex(16), assessment_id, line.line_type, line.amount, line.reason, now),
+            )
+        row = db.fetchone("SELECT * FROM assessments WHERE id=?", (assessment_id,))
+        after = _assessment_with_lines(db, row)
+    write_audit_event(actor_id=user["id"], actor_role=user["role"], action="assessment.create",
+                      entity_type="assessment", entity_id=assessment_id, taxpayer_id=body.taxpayer_id,
+                      before={}, after=after, reason=body.reason, correlation_id=secrets.token_hex(8))
+    return after
+
+
+@router.get("/assessments")
+def list_assessments(taxpayer_id: str | None = None, status: str | None = None, user=Depends(_revenue_user)):
+    clauses, params = [], []
+    if taxpayer_id:
+        clauses.append("taxpayer_id=?"); params.append(taxpayer_id)
+    if status:
+        clauses.append("status=?"); params.append(status)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    with get_ops_db() as db:
+        rows = db.fetchall(f"SELECT * FROM assessments{where} ORDER BY updated_at DESC LIMIT 250", params)
+        items = [_assessment_with_lines(db, row) for row in rows]
+    return {"items": items}
+
+
+@router.patch("/assessments/{assessment_id}")
+def patch_assessment(assessment_id: str, body: AssessmentPatch, user=Depends(_revenue_user)):
+    if body.status is not None and body.status not in ASSESSMENT_STATES:
+        raise HTTPException(422, "Invalid assessment status")
+    with get_ops_db() as db:
+        before = db.fetchone("SELECT * FROM assessments WHERE id=?", (assessment_id,))
+        if not before:
+            raise HTTPException(404, "Assessment not found")
+        updates = body.model_dump(exclude_unset=True)
+        reason = updates.pop("reason", None)
+        if any(k in updates for k in {"principal", "penalty", "interest"}) and not (reason or "").strip():
+            raise HTTPException(422, "Reason is required when changing assessment amounts")
+        principal = updates.get("principal", before["principal"])
+        penalty = updates.get("penalty", before["penalty"])
+        interest = updates.get("interest", before["interest"])
+        adjustment_total = db.fetchone("SELECT COALESCE(SUM(amount),0) AS total FROM assessment_lines WHERE assessment_id=?", (assessment_id,))["total"]
+        total = principal + penalty + interest + adjustment_total
+        db.execute(
+            "UPDATE assessments SET status=?,principal=?,penalty=?,interest=?,total=?,reason=?,updated_at=? WHERE id=?",
+            (updates.get("status", before["status"]), principal, penalty, interest, total, reason or before.get("reason"), time.time(), assessment_id),
+        )
+        after_row = db.fetchone("SELECT * FROM assessments WHERE id=?", (assessment_id,))
+        before_full = _assessment_with_lines(db, before)
+        after_full = _assessment_with_lines(db, after_row)
+    write_audit_event(actor_id=user["id"], actor_role=user["role"], action="assessment.update",
+                      entity_type="assessment", entity_id=assessment_id, taxpayer_id=before["taxpayer_id"],
+                      before=before_full, after=after_full, reason=reason, correlation_id=secrets.token_hex(8))
+    return after_full
+
+
+@router.get("/compliance/{taxpayer_id}")
+def get_compliance(taxpayer_id: str, user=Depends(_revenue_user)):
+    with get_ops_db() as db:
+        row = db.fetchone("SELECT * FROM compliance_records WHERE taxpayer_id=?", (taxpayer_id,))
+    if not row:
+        return {"taxpayer_id": taxpayer_id, "filing_compliance": "unknown", "payment_compliance": "unknown", "risk_flags": [], "notes": None, "next_action_date": None}
+    return _compliance(row)
+
+
+@router.patch("/compliance/{taxpayer_id}")
+def patch_compliance(taxpayer_id: str, body: CompliancePatch, user=Depends(_revenue_user)):
+    now = time.time()
+    with get_ops_db() as db:
+        before = db.fetchone("SELECT * FROM compliance_records WHERE taxpayer_id=?", (taxpayer_id,))
+        current = _compliance(before) if before else {
+            "taxpayer_id": taxpayer_id,
+            "filing_compliance": "unknown",
+            "payment_compliance": "unknown",
+            "risk_flags": [],
+            "notes": None,
+            "next_action_date": None,
+            "updated_by": user["id"],
+            "updated_at": now,
+        }
+        incoming = body.model_dump(exclude_unset=True)
+        merged = dict(current)
+        merged.update(incoming)
+        risk_flags_json = json.dumps(merged.get("risk_flags") or [], sort_keys=True)
+        if before:
+            db.execute(
+                "UPDATE compliance_records SET filing_compliance=?,payment_compliance=?,risk_flags_json=?,notes=?,next_action_date=?,updated_by=?,updated_at=? WHERE taxpayer_id=?",
+                (merged["filing_compliance"], merged["payment_compliance"], risk_flags_json, merged.get("notes"), merged.get("next_action_date"), user["id"], now, taxpayer_id),
+            )
+        else:
+            db.execute(
+                "INSERT INTO compliance_records(taxpayer_id,filing_compliance,payment_compliance,risk_flags_json,notes,next_action_date,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+                (taxpayer_id, merged["filing_compliance"], merged["payment_compliance"], risk_flags_json, merged.get("notes"), merged.get("next_action_date"), user["id"], now),
+            )
+        after = db.fetchone("SELECT * FROM compliance_records WHERE taxpayer_id=?", (taxpayer_id,))
+    after_out = _compliance(after)
+    write_audit_event(actor_id=user["id"], actor_role=user["role"], action="compliance.update",
+                      entity_type="compliance", entity_id=taxpayer_id, taxpayer_id=taxpayer_id,
+                      before=current if before else {}, after=after_out, reason=body.notes,
+                      correlation_id=secrets.token_hex(8))
+    return after_out
