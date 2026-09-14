@@ -42,7 +42,7 @@ def test_revenue_admin_workspace_has_admin_functions():
     assert "URA-PROMET" in response.text
     assert "Revenue Admin" in response.text
     assert "Staff Management" in response.text
-    assert "Role & Permission Management" in response.text
+    assert "Role &amp; Permission Management" in response.text
     assert "System Settings" in response.text
     assert "Audit Log" in response.text
 
