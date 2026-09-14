@@ -1,12 +1,12 @@
-# UNG-PROMET
+# URA-PROMET
 
 **Public Revenue Operations, Management & Electronic Taxation**
 
-UNG-PROMET is the UNG ecosystem's revenue and taxation platform. It provides authenticated tax-return creation/read/calculation workflows, effective-dated Uganda resident PAYE calculations, NSSF calculations, corporation-tax calculation, advanced-integration capability reporting, health endpoints, restricted CORS, and Railway startup configuration.
+URA-PROMET is the revenue and taxation platform in the UNG ecosystem. It provides authenticated tax-return creation/read/calculation workflows, effective-dated Uganda resident PAYE calculations, NSSF calculations, corporation-tax calculation, advanced-integration capability reporting, health endpoints, restricted CORS, and Railway startup configuration.
 
-## Compatibility
+## Canonical identity
 
-The existing repository, Railway project/service IDs, API paths, environment-variable names, and legacy `UNG-TAX` technical identifiers remain in place during the naming migration so integrations continue to work. `UNG-TAX` is the legacy technical identity; `UNG-PROMET` is the operational system name.
+The operational and user-facing system name is **URA-PROMET**. Existing repository, API paths, environment-variable names, and deployment identifiers may remain unchanged where renaming them would break compatibility, but they are implementation details rather than the product identity.
 
 ## 2026 Uganda rules
 
@@ -22,4 +22,4 @@ Live filing transmission is intentionally disabled until official tax-authority 
 
 ## Next production integration
 
-Migrate persistence to PostgreSQL, replace local auth with UNG-JANUS, publish lifecycle events through UNG-PULSAR, and enable authority connectors only after acceptance testing.
+Continue PostgreSQL-backed persistence, replace local auth with UNG-JANUS when integration is ready, publish lifecycle events through UNG-PULSAR, and enable authority connectors only after acceptance testing.
