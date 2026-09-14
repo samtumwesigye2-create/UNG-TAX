@@ -2,7 +2,6 @@ import hashlib
 import hmac
 import secrets
 import smtplib
-import sqlite3
 import ssl
 import time
 from email.message import EmailMessage
@@ -11,6 +10,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 import auth
+import auth_store
 
 router = APIRouter(prefix="/auth/password", tags=["auth"])
 RESET_TTL_SECONDS = 15 * 60
@@ -18,16 +18,7 @@ RESET_MAX_ATTEMPTS = 6
 
 
 def _init():
-    c = auth.db()
-    c.execute("""CREATE TABLE IF NOT EXISTS auth_password_resets(
-        reset_id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        code_hash TEXT NOT NULL,
-        expires_at REAL NOT NULL,
-        attempts INTEGER NOT NULL DEFAULT 0,
-        created_at REAL NOT NULL
-    )""")
-    c.close()
+    auth_store.init_schema()
 
 
 _init()
@@ -69,7 +60,7 @@ def request_reset(body: ResetRequestIn):
     email = body.email.strip().lower()
     if not auth._smtp_ready():
         raise HTTPException(503, "Password reset email delivery is not configured")
-    c = auth.db()
+    c = auth_store.db()
     user = c.execute("SELECT id,email FROM auth_users WHERE email=?", (email,)).fetchone()
     if not user:
         c.close()
@@ -96,7 +87,7 @@ def request_reset(body: ResetRequestIn):
 def confirm_reset(body: ResetConfirmIn):
     if len(body.new_password) < 10:
         raise HTTPException(400, "Password must be at least 10 characters")
-    c = auth.db()
+    c = auth_store.db()
     row = c.execute("SELECT * FROM auth_password_resets WHERE reset_id=?", (body.reset_id,)).fetchone()
     if not row or row["expires_at"] < time.time() or row["attempts"] >= RESET_MAX_ATTEMPTS:
         c.close()
@@ -107,10 +98,9 @@ def confirm_reset(body: ResetConfirmIn):
         c.close()
         raise HTTPException(400, "Invalid or expired reset code")
     pw_hash, salt = auth.hash_password(body.new_password)
-    c.execute("BEGIN IMMEDIATE")
-    c.execute("UPDATE auth_users SET password_hash=?, password_salt=? WHERE id=?", (pw_hash, salt, row["user_id"]))
-    c.execute("DELETE FROM auth_sessions WHERE user_id=?", (row["user_id"],))
-    c.execute("DELETE FROM auth_password_resets WHERE user_id=?", (row["user_id"],))
-    c.execute("COMMIT")
+    with auth_store.transaction(c):
+        c.execute("UPDATE auth_users SET password_hash=?, password_salt=? WHERE id=?", (pw_hash, salt, row["user_id"]))
+        c.execute("DELETE FROM auth_sessions WHERE user_id=?", (row["user_id"],))
+        c.execute("DELETE FROM auth_password_resets WHERE user_id=?", (row["user_id"],))
     c.close()
     return {"reset": True, "message": "Password updated. Please sign in with your new password."}
