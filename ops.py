@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 import auth
 from ops_audit import write_audit_event
 from ops_auth import require_revenue_user
-from ops_models import NoteIn, TaxpayerPatch
+from ops_models import NoteIn, ReturnReviewPatch, TaxpayerPatch, RETURN_TRANSITIONS
 from ops_store import get_ops_db
 
 router = APIRouter(prefix="/ops", tags=["revenue-operations"])
@@ -30,6 +30,12 @@ def _json(value, fallback):
 def _profile(row: dict) -> dict:
     out = dict(row)
     out["metadata"] = _json(out.pop("metadata_json", "{}"), {})
+    return out
+
+
+def _return(row: dict) -> dict:
+    out = dict(row)
+    out["payload"] = _json(out.pop("payload_json", "{}"), {})
     return out
 
 
@@ -110,3 +116,54 @@ def add_taxpayer_note(taxpayer_id: str, body: NoteIn, user=Depends(_revenue_user
                       entity_type="taxpayer_note", entity_id=note_id, taxpayer_id=taxpayer_id,
                       before={}, after={"note": body.note}, correlation_id=secrets.token_hex(8))
     return {"id": note_id, "taxpayer_id": taxpayer_id, "note": body.note, "actor_id": user["id"], "created_at": now}
+
+
+@router.get("/returns")
+def list_returns(state: str | None = None, taxpayer_id: str | None = None, user=Depends(_revenue_user)):
+    clauses, params = [], []
+    if state:
+        clauses.append("state=?")
+        params.append(state)
+    if taxpayer_id:
+        clauses.append("taxpayer_id=?")
+        params.append(taxpayer_id)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    with get_ops_db() as db:
+        rows = db.fetchall(f"SELECT * FROM return_reviews{where} ORDER BY updated_at DESC LIMIT 250", params)
+    return {"items": [_return(row) for row in rows]}
+
+
+@router.get("/returns/{return_id}")
+def get_return(return_id: str, user=Depends(_revenue_user)):
+    with get_ops_db() as db:
+        row = db.fetchone("SELECT * FROM return_reviews WHERE id=?", (return_id,))
+    if not row:
+        raise HTTPException(404, "Return not found")
+    return _return(row)
+
+
+@router.patch("/returns/{return_id}/review")
+def review_return(return_id: str, body: ReturnReviewPatch, user=Depends(_revenue_user)):
+    target = body.state
+    with get_ops_db() as db:
+        before = db.fetchone("SELECT * FROM return_reviews WHERE id=?", (return_id,))
+        if not before:
+            raise HTTPException(404, "Return not found")
+        current = before["state"]
+        if target not in RETURN_TRANSITIONS.get(current, set()):
+            raise HTTPException(409, f"Invalid return transition: {current} -> {target}")
+        if target in {"rejected", "voided"} and not (body.reason or "").strip():
+            raise HTTPException(422, "Reason is required for rejected or voided returns")
+        now = time.time()
+        db.execute(
+            "UPDATE return_reviews SET state=?,reviewer_id=?,reviewer_notes=?,reason=?,updated_at=? WHERE id=?",
+            (target, user["id"], body.reviewer_notes, body.reason, now, return_id),
+        )
+        after = db.fetchone("SELECT * FROM return_reviews WHERE id=?", (return_id,))
+    write_audit_event(
+        actor_id=user["id"], actor_role=user["role"], action="return.review.transition",
+        entity_type="return", entity_id=return_id, taxpayer_id=before["taxpayer_id"],
+        before=_return(before), after=_return(after), reason=body.reason,
+        correlation_id=secrets.token_hex(8),
+    )
+    return _return(after)
