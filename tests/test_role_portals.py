@@ -51,5 +51,5 @@ def test_health_advertises_three_roles_and_ura_promet():
     response = client.get("/health")
     assert response.status_code == 200
     body = response.json()
-    assert body["service"] == "ura-promet"
+    assert body["service"] == "URA-PROMET"
     assert body["role_portals"] == ["taxpayer", "revenue_staff", "revenue_admin"]
