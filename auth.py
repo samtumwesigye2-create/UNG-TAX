@@ -1,4 +1,4 @@
-"""auth.py — Secure authentication for UNG-PROMET."""
+"""auth.py — Secure authentication for URA-PROMET."""
 import base64, hashlib, hmac, os, secrets, smtplib, sqlite3, ssl, struct, time
 from collections import defaultdict, deque
 from email.message import EmailMessage
@@ -13,8 +13,19 @@ SMTP_HOST=os.getenv("PROMET_SMTP_HOST","").strip(); SMTP_PORT=int(os.getenv("PRO
 _LOGIN_ATTEMPTS=defaultdict(deque); _LOGIN_LOCK=Lock(); _LOGIN_WINDOW=300; _LOGIN_MAX=8
 
 def role_for_email(email:str)->str:
+    normalized=(email or "").strip().lower()
+    admins={x.strip().lower() for x in os.getenv("PROMET_ADMIN_EMAILS","").split(",") if x.strip()}
     staff={x.strip().lower() for x in os.getenv("PROMET_STAFF_EMAILS","").split(",") if x.strip()}
-    return "revenue_staff" if (email or "").strip().lower() in staff else "taxpayer"
+    if normalized in admins:
+        return "revenue_admin"
+    if normalized in staff:
+        return "revenue_staff"
+    return "taxpayer"
+
+def portal_for_role(role:str)->str:
+    if role=="revenue_admin": return "/revenue"
+    if role=="revenue_staff": return "/revenue-staff"
+    return "/taxpayer"
 
 def _check_login_rate(key):
     now=time.time()
@@ -54,11 +65,11 @@ def _hotp(secret_b32,counter,digits=6):
     key=base64.b32decode(secret_b32); digest=hmac.new(key,struct.pack(">Q",counter),hashlib.sha1).digest(); offset=digest[-1]&15; code=(struct.unpack(">I",digest[offset:offset+4])[0]&0x7fffffff)%(10**digits); return str(code).zfill(digits)
 def verify_totp(secret_b32,code,window=1,step=30):
     counter=int(time.time()//step); code=(code or "").strip(); return any(hmac.compare_digest(_hotp(secret_b32,counter+w),code) for w in range(-window,window+1))
-def provisioning_uri(email,secret_b32,issuer="UNG-PROMET"):return f"otpauth://totp/{issuer}:{email}?secret={secret_b32}&issuer={issuer}&digits=6&period=30"
+def provisioning_uri(email,secret_b32,issuer="URA-PROMET"):return f"otpauth://totp/{issuer}:{email}?secret={secret_b32}&issuer={issuer}&digits=6&period=30"
 def _smtp_ready():return bool(SMTP_HOST and SMTP_FROM)
 def _send_email_otp(email,code):
     if not _smtp_ready():raise RuntimeError("PROMET email delivery is not configured")
-    msg=EmailMessage(); msg["Subject"]="Your UNG-PROMET verification code"; msg["From"]=SMTP_FROM; msg["To"]=email; msg.set_content(f"Your UNG-PROMET verification code is {code}.\n\nIt expires in {max(1,OTP_TTL_SECONDS//60)} minutes.")
+    msg=EmailMessage(); msg["Subject"]="Your URA-PROMET verification code"; msg["From"]=SMTP_FROM; msg["To"]=email; msg.set_content(f"Your URA-PROMET verification code is {code}.\n\nIt expires in {max(1,OTP_TTL_SECONDS//60)} minutes.")
     with smtplib.SMTP(SMTP_HOST,SMTP_PORT,timeout=10) as server:
         server.ehlo()
         if SMTP_STARTTLS:server.starttls(context=ssl.create_default_context());server.ehlo()
@@ -102,6 +113,6 @@ def mfa_verify(body:MfaIn):
     if not s:c.close();raise HTTPException(401,"Invalid session")
     u=c.execute("SELECT * FROM auth_users WHERE id=?",(s["user_id"],)).fetchone(); ok=_verify_email_otp(c,body.session_token,body.code) if _smtp_ready() else verify_totp(u["mfa_secret"],body.code)
     if not ok:c.close();raise HTTPException(401,"Invalid verification code")
-    c.execute("UPDATE auth_sessions SET mfa_verified=1 WHERE token=?",(body.session_token,)); c.close(); return {"access_token":body.session_token,"token_type":"bearer","role":role_for_email(u["email"]),"portal":"/revenue" if role_for_email(u["email"])=="revenue_staff" else "/taxpayer"}
+    c.execute("UPDATE auth_sessions SET mfa_verified=1 WHERE token=?",(body.session_token,)); role=role_for_email(u["email"]); c.close(); return {"access_token":body.session_token,"token_type":"bearer","role":role,"portal":portal_for_role(role)}
 @router.get("/me")
 def me(user=__import__('fastapi').Depends(require_auth)):return user
