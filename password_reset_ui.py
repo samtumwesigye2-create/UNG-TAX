@@ -148,6 +148,15 @@ def inject_password_reset_ui(html: str) -> str:
     if mfa_marker in html:
         html = html.replace(mfa_marker, RESET_UI + "\n" + mfa_marker, 1)
 
+    # Keep the filing wizard aligned with the current authentication contract.
+    # The server selects email OTP when Resend is configured and otherwise falls
+    # back to TOTP.  Older static markup assumed TOTP and used a retired endpoint.
+    old_heading = '$("authHeading").textContent = "Enter your authenticator code";'
+    new_heading = '$("authHeading").textContent = data.mfa_method === "email_otp" ? "Enter the verification code sent to your email" : "Enter your authenticator code";'
+    if old_heading in html:
+        html = html.replace(old_heading, new_heading, 1)
+    html = html.replace('AUTH_API + "/mfa/login-verify"', 'AUTH_API + "/mfa/verify"')
+
     if "</body>" in html:
         html = html.replace("</body>", RESET_SCRIPT + "\n</body>", 1)
     return html
