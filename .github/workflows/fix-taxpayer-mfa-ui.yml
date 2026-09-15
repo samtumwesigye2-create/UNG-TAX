@@ -1,3 +1,4 @@
+# one-time verified patch; remove after green CI
 name: Apply taxpayer MFA UI fix
 on:
   push:
