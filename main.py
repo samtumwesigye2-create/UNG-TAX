@@ -34,4 +34,5 @@ def revenue_admin_portal():return FileResponse(os.path.join(STATIC_DIR,"revenue.
 def revenue_operations_workspace():return FileResponse(os.path.join(STATIC_DIR,"ops-workspace.html"))
 @app.get("/health")
 def health():
-    return {"status":"ok","service":"URA-PROMET","version":"0.7.3","ui":"operational-workspaces","role_portals":["taxpayer","revenue_staff","revenue_admin"],"auth_storage":auth_store.backend_name(),"mfa":"email-otp" if auth._smtp_ready() else "totp-fallback","email_otp_configured":auth._smtp_ready(),"live_transmission":False,"operations_api":"/ops","operations_workspace":"/operations","password_reset_ui":True}
+    email_ready=auth._resend_ready()
+    return {"status":"ok","service":"URA-PROMET","version":"0.7.3","ui":"operational-workspaces","role_portals":["taxpayer","revenue_staff","revenue_admin"],"auth_storage":auth_store.backend_name(),"mfa":"email-otp" if email_ready else "totp-fallback","email_otp_configured":email_ready,"live_transmission":False,"operations_api":"/ops","operations_workspace":"/operations","password_reset_ui":True}
