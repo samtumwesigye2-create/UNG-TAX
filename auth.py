@@ -118,3 +118,21 @@ def mfa_verify(body:MfaIn):
     c.execute("UPDATE auth_sessions SET mfa_verified=1 WHERE token=?",(body.session_token,)); role=role_for_email(u["email"]); c.close(); return {"access_token":body.session_token,"token_type":"bearer","role":role,"portal":portal_for_role(role)}
 @router.get("/me")
 def me(user=__import__('fastapi').Depends(require_auth)):return user
+class ChangePasswordIn(BaseModel):current_password:str;new_password:str
+@router.post("/password/change")
+def change_password(body:ChangePasswordIn,authorization:str=Header(None)):
+    # Authenticated in-app password change — doesn't depend on email delivery, unlike
+    # /auth/password/request+confirm (password_reset.py), which needs PROMET_SMTP_* configured.
+    if not authorization or not authorization.startswith("Bearer "):raise HTTPException(401,"Missing bearer token")
+    token=authorization.split(" ",1)[1]; c=db(); s=c.execute("SELECT * FROM auth_sessions WHERE token=?",(token,)).fetchone()
+    if not s or s["expires_at"]<time.time():c.close();raise HTTPException(401,"Invalid or expired session")
+    if not s["mfa_verified"]:c.close();raise HTTPException(401,"MFA verification required")
+    u=c.execute("SELECT * FROM auth_users WHERE id=?",(s["user_id"],)).fetchone()
+    if not u or not verify_password(body.current_password,u["password_salt"],u["password_hash"]):c.close();raise HTTPException(401,"Current password is incorrect")
+    if len(body.new_password)<10:c.close();raise HTTPException(400,"New password must be at least 10 characters")
+    if hmac.compare_digest(body.new_password.encode(),body.current_password.encode()):c.close();raise HTTPException(400,"New password must be different from your current password")
+    ph,salt=hash_password(body.new_password)
+    with auth_store.transaction(c):
+        c.execute("UPDATE auth_users SET password_hash=?,password_salt=? WHERE id=?",(ph,salt,u["id"]))
+        c.execute("DELETE FROM auth_sessions WHERE user_id=? AND token!=?",(u["id"],token))
+    c.close(); return {"changed":True,"message":"Password updated. Other signed-in devices have been signed out."}
