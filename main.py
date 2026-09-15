@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 import auth, auth_migrate, auth_store, password_reset, tax_filing, tax_advanced, ops, ops_cases_notices, ops_reports
 from password_reset_ui import inject_password_reset_ui
+from mfa_ui import inject_mfa_copy
 
 AUTH_MIGRATION_RESULT=auth_migrate.migrate_sqlite_auth_to_postgres()
 app=FastAPI(title="URA-PROMET",description="Public Revenue Operations, Management & Electronic Taxation",version="0.7.3")
@@ -16,6 +17,7 @@ STATIC_DIR=os.path.join(os.path.dirname(os.path.abspath(__file__)),"static"); ap
 def _render_wizard():
     with open(os.path.join(STATIC_DIR,"index.html"),"r",encoding="utf-8") as f: html=f.read()
     html=inject_password_reset_ui(html)
+    html=inject_mfa_copy(html)
     banner='<div style="background:#102b46;color:white;padding:10px 16px;font-family:-apple-system,sans-serif"><b>URA-PROMET</b> · <a href="/taxpayer" style="color:white">Taxpayer Portal</a> · <a href="/revenue-staff" style="color:white">Revenue Staff</a> · <a href="/revenue" style="color:white">Revenue Admin</a></div>'
     return banner+html
 
