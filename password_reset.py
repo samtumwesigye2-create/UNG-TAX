@@ -1,10 +1,11 @@
 import hashlib
 import hmac
+import json
+import os
 import secrets
-import smtplib
-import ssl
 import time
-from email.message import EmailMessage
+import urllib.error
+import urllib.request
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -15,6 +16,7 @@ import auth_store
 router = APIRouter(prefix="/auth/password", tags=["auth"])
 RESET_TTL_SECONDS = 15 * 60
 RESET_MAX_ATTEMPTS = 6
+RESEND_API_URL = "https://api.resend.com/emails"
 
 
 def _init():
@@ -24,25 +26,43 @@ def _init():
 _init()
 
 
+def _resend_ready() -> bool:
+    return bool(os.getenv("RESEND_API_KEY", "").strip() and auth.SMTP_FROM)
+
+
 def _send_reset_email(email: str, code: str) -> None:
-    if not auth._smtp_ready():
+    api_key = os.getenv("RESEND_API_KEY", "").strip()
+    if not api_key or not auth.SMTP_FROM:
         raise RuntimeError("Email delivery is not configured")
-    msg = EmailMessage()
-    msg["Subject"] = "Your URA-PROMET password reset code"
-    msg["From"] = auth.SMTP_FROM
-    msg["To"] = email
-    msg.set_content(
-        f"Your URA-PROMET password reset code is {code}.\n\n"
-        "It expires in 15 minutes. If you did not request a password reset, ignore this message."
+
+    payload = json.dumps({
+        "from": auth.SMTP_FROM,
+        "to": [email],
+        "subject": "Your URA-PROMET password reset code",
+        "text": (
+            f"Your URA-PROMET password reset code is {code}.\n\n"
+            "It expires in 15 minutes. If you did not request a password reset, ignore this message."
+        ),
+    }).encode("utf-8")
+    request = urllib.request.Request(
+        RESEND_API_URL,
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "URA-PROMET/1.0",
+        },
+        method="POST",
     )
-    with smtplib.SMTP(auth.SMTP_HOST, auth.SMTP_PORT, timeout=10) as server:
-        server.ehlo()
-        if auth.SMTP_STARTTLS:
-            server.starttls(context=ssl.create_default_context())
-            server.ehlo()
-        if auth.SMTP_USERNAME:
-            server.login(auth.SMTP_USERNAME, auth.SMTP_PASSWORD)
-        server.send_message(msg)
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            if response.status < 200 or response.status >= 300:
+                raise RuntimeError(f"Email provider returned HTTP {response.status}")
+    except urllib.error.HTTPError as exc:
+        # Do not leak provider responses or credentials to the client.
+        raise RuntimeError(f"Email provider returned HTTP {exc.code}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError("Email provider is unavailable") from exc
 
 
 class ResetRequestIn(BaseModel):
@@ -58,7 +78,7 @@ class ResetConfirmIn(BaseModel):
 @router.post("/request")
 def request_reset(body: ResetRequestIn):
     email = body.email.strip().lower()
-    if not auth._smtp_ready():
+    if not _resend_ready():
         raise HTTPException(503, "Password reset email delivery is not configured")
     c = auth_store.db()
     user = c.execute("SELECT id,email FROM auth_users WHERE email=?", (email,)).fetchone()
