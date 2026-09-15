@@ -1,11 +1,12 @@
 import pathlib
 
 from password_reset_ui import inject_password_reset_ui
+from mfa_ui import inject_mfa_copy
 
 
 def _rendered_filing_ui():
     source = pathlib.Path("static/index.html").read_text()
-    return inject_password_reset_ui(source)
+    return inject_mfa_copy(inject_password_reset_ui(source))
 
 
 def test_filing_login_uses_server_selected_mfa_method():
