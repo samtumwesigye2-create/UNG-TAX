@@ -1,7 +1,6 @@
 """auth.py — Secure authentication for URA-PROMET."""
-import base64, hashlib, hmac, os, secrets, smtplib, ssl, struct, time
+import base64, hashlib, hmac, json, os, secrets, struct, time, urllib.error, urllib.request
 from collections import defaultdict, deque
-from email.message import EmailMessage
 from threading import Lock
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
@@ -10,7 +9,8 @@ import auth_store
 KEY_FILE=os.path.join(os.path.dirname(os.path.abspath(__file__)),"secret.key")
 SESSION_TTL_SECONDS=60*60*8; OTP_TTL_SECONDS=int(os.getenv("PROMET_EMAIL_OTP_TTL_SECONDS","600")); OTP_MAX_ATTEMPTS=int(os.getenv("PROMET_EMAIL_OTP_MAX_ATTEMPTS","6"))
 router=APIRouter(prefix="/auth",tags=["auth"])
-SMTP_HOST=os.getenv("PROMET_SMTP_HOST","").strip(); SMTP_PORT=int(os.getenv("PROMET_SMTP_PORT","587")); SMTP_USERNAME=os.getenv("PROMET_SMTP_USERNAME","").strip(); SMTP_PASSWORD=os.getenv("PROMET_SMTP_PASSWORD","").strip(); SMTP_FROM=os.getenv("PROMET_SMTP_FROM",SMTP_USERNAME).strip(); SMTP_STARTTLS=os.getenv("PROMET_SMTP_STARTTLS","true").strip().lower() not in {"0","false","no"}
+SMTP_FROM=os.getenv("PROMET_SMTP_FROM","").strip()
+RESEND_API_URL="https://api.resend.com/emails"
 _LOGIN_ATTEMPTS=defaultdict(deque); _LOGIN_LOCK=Lock(); _LOGIN_WINDOW=300; _LOGIN_MAX=8
 
 def role_for_email(email:str)->str:
@@ -64,15 +64,19 @@ def _hotp(secret_b32,counter,digits=6):
 def verify_totp(secret_b32,code,window=1,step=30):
     counter=int(time.time()//step); code=(code or "").strip(); return any(hmac.compare_digest(_hotp(secret_b32,counter+w),code) for w in range(-window,window+1))
 def provisioning_uri(email,secret_b32,issuer="URA-PROMET"):return f"otpauth://totp/{issuer}:{email}?secret={secret_b32}&issuer={issuer}&digits=6&period=30"
-def _smtp_ready():return bool(SMTP_HOST and SMTP_FROM)
+def _resend_ready():return bool(os.getenv("RESEND_API_KEY","").strip() and SMTP_FROM)
 def _send_email_otp(email,code):
-    if not _smtp_ready():raise RuntimeError("PROMET email delivery is not configured")
-    msg=EmailMessage(); msg["Subject"]="Your URA-PROMET verification code"; msg["From"]=SMTP_FROM; msg["To"]=email; msg.set_content(f"Your URA-PROMET verification code is {code}.\n\nIt expires in {max(1,OTP_TTL_SECONDS//60)} minutes.")
-    with smtplib.SMTP(SMTP_HOST,SMTP_PORT,timeout=10) as server:
-        server.ehlo()
-        if SMTP_STARTTLS:server.starttls(context=ssl.create_default_context());server.ehlo()
-        if SMTP_USERNAME:server.login(SMTP_USERNAME,SMTP_PASSWORD)
-        server.send_message(msg)
+    api_key=os.getenv("RESEND_API_KEY","").strip()
+    if not api_key or not SMTP_FROM:raise RuntimeError("PROMET email delivery is not configured")
+    payload=json.dumps({"from":SMTP_FROM,"to":[email],"subject":"Your URA-PROMET verification code","text":f"Your URA-PROMET verification code is {code}.\n\nIt expires in {max(1,OTP_TTL_SECONDS//60)} minutes."}).encode("utf-8")
+    request=urllib.request.Request(RESEND_API_URL,data=payload,headers={"Authorization":f"Bearer {api_key}","Content-Type":"application/json","User-Agent":"URA-PROMET/1.0"},method="POST")
+    try:
+        with urllib.request.urlopen(request,timeout=5) as response:
+            if response.status<200 or response.status>=300:raise RuntimeError(f"Email provider returned HTTP {response.status}")
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"Email provider returned HTTP {exc.code}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError("Email provider is unavailable") from exc
 def _issue_email_otp(c,session_token,user_id,email):
     code=f"{secrets.randbelow(1_000_000):06d}"; now=time.time(); c.execute("DELETE FROM auth_email_otp WHERE session_token=?",(session_token,)); c.execute("INSERT INTO auth_email_otp(session_token,user_id,code_hash,expires_at,attempts,created_at) VALUES(?,?,?,?,0,?)",(session_token,user_id,hashlib.sha256(code.encode()).hexdigest(),now+OTP_TTL_SECONDS,now)); _send_email_otp(email,code)
 def _verify_email_otp(c,session_token,code):
@@ -106,14 +110,14 @@ def login(body:LoginIn):
     email=body.email.lower().strip(); _check_login_rate(email); c=db(); u=c.execute("SELECT * FROM auth_users WHERE email=?",(email,)).fetchone()
     if not u or not verify_password(body.password,u["password_salt"],u["password_hash"]):c.close();raise HTTPException(401,"Invalid credentials")
     token=secrets.token_urlsafe(32); now=time.time(); c.execute("INSERT INTO auth_sessions VALUES(?,?,?,?,?)",(token,u["id"],0,now,now+SESSION_TTL_SECONDS)); _clear_login_rate(email)
-    if _smtp_ready(): _issue_email_otp(c,token,u["id"],email); method="email_otp"
+    if _resend_ready(): _issue_email_otp(c,token,u["id"],email); method="email_otp"
     else: method="totp"
     c.close(); return {"session_token":token,"mfa_required":True,"mfa_method":method,"provisioning_uri":provisioning_uri(email,u["mfa_secret"]) if method=="totp" else None,"mfa_secret":u["mfa_secret"] if method=="totp" else None}
 @router.post("/mfa/verify")
 def mfa_verify(body:MfaIn):
     c=db(); s=c.execute("SELECT * FROM auth_sessions WHERE token=?",(body.session_token,)).fetchone()
     if not s:c.close();raise HTTPException(401,"Invalid session")
-    u=c.execute("SELECT * FROM auth_users WHERE id=?",(s["user_id"],)).fetchone(); ok=_verify_email_otp(c,body.session_token,body.code) if _smtp_ready() else verify_totp(u["mfa_secret"],body.code)
+    u=c.execute("SELECT * FROM auth_users WHERE id=?",(s["user_id"],)).fetchone(); ok=_verify_email_otp(c,body.session_token,body.code) if _resend_ready() else verify_totp(u["mfa_secret"],body.code)
     if not ok:c.close();raise HTTPException(401,"Invalid verification code")
     c.execute("UPDATE auth_sessions SET mfa_verified=1 WHERE token=?",(body.session_token,)); role=role_for_email(u["email"]); c.close(); return {"access_token":body.session_token,"token_type":"bearer","role":role,"portal":portal_for_role(role)}
 @router.get("/me")
@@ -121,8 +125,6 @@ def me(user=__import__('fastapi').Depends(require_auth)):return user
 class ChangePasswordIn(BaseModel):current_password:str;new_password:str
 @router.post("/password/change")
 def change_password(body:ChangePasswordIn,authorization:str=Header(None)):
-    # Authenticated in-app password change — doesn't depend on email delivery, unlike
-    # /auth/password/request+confirm (password_reset.py), which needs PROMET_SMTP_* configured.
     if not authorization or not authorization.startswith("Bearer "):raise HTTPException(401,"Missing bearer token")
     token=authorization.split(" ",1)[1]; c=db(); s=c.execute("SELECT * FROM auth_sessions WHERE token=?",(token,)).fetchone()
     if not s or s["expires_at"]<time.time():c.close();raise HTTPException(401,"Invalid or expired session")
