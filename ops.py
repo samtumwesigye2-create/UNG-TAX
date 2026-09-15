@@ -5,7 +5,7 @@ import json
 import secrets
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from ops_audit import write_audit_event
 from ops_models import (
