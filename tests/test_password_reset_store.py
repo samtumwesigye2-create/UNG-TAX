@@ -42,6 +42,6 @@ def test_reset_confirmation_invalidates_all_sessions(monkeypatch, tmp_path):
 
 def test_unknown_email_remains_generic(monkeypatch, tmp_path):
     auth_store, auth, password_reset = _reload_modules(monkeypatch, tmp_path)
-    monkeypatch.setattr(auth, "_smtp_ready", lambda: True)
+    monkeypatch.setattr(password_reset, "_resend_ready", lambda: True)
     result = password_reset.request_reset(password_reset.ResetRequestIn(email="missing@example.com"))
     assert result == {"sent": True, "message": "If that account exists, a reset code has been sent."}
