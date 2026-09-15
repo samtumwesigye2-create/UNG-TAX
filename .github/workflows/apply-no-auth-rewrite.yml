@@ -21,50 +21,46 @@ jobs:
           from pathlib import Path
           import re
 
-          # Remove the remaining backend authentication dependency from ops.py.
-          p = Path('ops.py')
-          s = p.read_text()
+          direct_user = '_OPEN_USER = {"id": "promet-direct", "role": "revenue_operations"}\n'
+
+          # Revenue operations API.
+          p = Path('ops.py'); s = p.read_text()
           s = s.replace('from fastapi import APIRouter, Depends, HTTPException, Query', 'from fastapi import APIRouter, HTTPException, Query')
-          s = s.replace('\nimport auth\n', '\n')
-          s = s.replace('from ops_auth import require_revenue_user\n', '')
-          s = re.sub(r'\n\ndef _revenue_user\(user=Depends\(auth\.require_auth\)\):\n    return require_revenue_user\(user\)\n', '\n\n_OPEN_USER = {"id": "promet-direct", "role": "revenue_operations"}\n', s, count=1)
+          s = s.replace('\nimport auth\n', '\n').replace('from ops_auth import require_revenue_user\n', '')
+          s = re.sub(r'\n\ndef _revenue_user\(user=Depends\(auth\.require_auth\)\):\n    return require_revenue_user\(user\)\n', '\n\n'+direct_user, s, count=1)
           s = s.replace('user=Depends(_revenue_user)', 'user=_OPEN_USER')
           p.write_text(s)
 
-          # Remove the complete authentication/password/MFA runtime stack.
-          runtime_auth = (
-              'auth.py','auth_store.py','auth_migrate.py','mfa_ui.py',
-              'password_reset.py','password_reset_ui.py','ops_auth.py',
-              'static/ops-password-reset.js',
-          )
-          for filename in runtime_auth:
+          # Tax filing API and advanced API: direct access, preserving actor fields for audit records.
+          for filename in ('tax_filing.py','tax_advanced.py'):
+              p = Path(filename); s = p.read_text()
+              s = s.replace(', Depends,', ',').replace(', Depends\n', '\n')
+              s = s.replace('HTTPException, Depends, UploadFile', 'HTTPException, UploadFile')
+              s = s.replace('HTTPException, Depends', 'HTTPException')
+              s = s.replace('\nimport auth\n', '\n')
+              s = s.replace('user=Depends(auth.require_auth)', 'user=_OPEN_USER')
+              marker = 'router = APIRouter(prefix="/tax", tags=['
+              pos = s.find(marker)
+              if pos >= 0 and '_OPEN_USER =' not in s:
+                  line_end = s.find('\n', pos)
+                  s = s[:line_end+1] + direct_user + s[line_end+1:]
+              p.write_text(s)
+
+          # Remove authentication/password/MFA runtime stack.
+          for filename in ('auth.py','auth_store.py','auth_migrate.py','mfa_ui.py','password_reset.py','password_reset_ui.py','ops_auth.py','static/ops-password-reset.js'):
               Path(filename).unlink(missing_ok=True)
 
-          # Remove tests for features that no longer exist.
-          obsolete_tests = (
-              'tests/test_auth.py','tests/test_auth_bootstrap.py',
-              'tests/test_auth_email_transport.py','tests/test_auth_finalization.py',
-              'tests/test_auth_store.py','tests/test_filing_mfa_ui.py',
-              'tests/test_password_reset_store.py','tests/test_password_reset_transport.py',
-              'tests/test_password_reset_ui.py','tests/test_taxpayer_mfa_transport.py',
-          )
-          for filename in obsolete_tests:
+          # Remove tests for deleted authentication features.
+          for filename in ('tests/test_auth.py','tests/test_auth_bootstrap.py','tests/test_auth_email_transport.py','tests/test_auth_finalization.py','tests/test_auth_store.py','tests/test_filing_mfa_ui.py','tests/test_password_reset_store.py','tests/test_password_reset_transport.py','tests/test_password_reset_ui.py','tests/test_taxpayer_mfa_transport.py'):
               Path(filename).unlink(missing_ok=True)
 
-          # Notices now use the direct-access audit actor instead of an authenticated staff identity.
-          p = Path('tests/test_ops_notices.py')
-          p.write_text('''from fastapi.testclient import TestClient\n\n\ndef test_issued_notice_content_is_immutable_and_replacement_supported():\n    from main import app\n    client = TestClient(app)\n    r = client.post("/ops/notices", json={"taxpayer_id":"tp-notice","notice_type":"assessment","subject":"Assessment issued","content":"Original notice"})\n    assert r.status_code == 201\n    nid = r.json()["id"]\n    assert client.patch(f"/ops/notices/{nid}", json={"status":"approved"}).status_code == 200\n    issued = client.patch(f"/ops/notices/{nid}", json={"status":"issued"})\n    assert issued.status_code == 200\n    assert issued.json()["issued_at"] is not None\n    assert issued.json()["issued_by"] == "promet-direct"\n    assert client.patch(f"/ops/notices/{nid}", json={"content":"Changed after issue"}).status_code == 409\n    replacement = client.post("/ops/notices", json={"taxpayer_id":"tp-notice","notice_type":"assessment_correction","subject":"Replacement","content":"Corrected notice","supersedes_notice_id":nid})\n    assert replacement.status_code == 201\n    assert replacement.json()["supersedes_notice_id"] == nid\n''')
+          # Notice behavior remains tested, now against the direct-access audit actor.
+          Path('tests/test_ops_notices.py').write_text('''from fastapi.testclient import TestClient\n\n\ndef test_issued_notice_content_is_immutable_and_replacement_supported():\n    from main import app\n    client = TestClient(app)\n    r = client.post("/ops/notices", json={"taxpayer_id":"tp-notice","notice_type":"assessment","subject":"Assessment issued","content":"Original notice"})\n    assert r.status_code == 201\n    nid = r.json()["id"]\n    assert client.patch(f"/ops/notices/{nid}", json={"status":"approved"}).status_code == 200\n    issued = client.patch(f"/ops/notices/{nid}", json={"status":"issued"})\n    assert issued.status_code == 200\n    assert issued.json()["issued_at"] is not None\n    assert issued.json()["issued_by"] == "promet-direct"\n    assert client.patch(f"/ops/notices/{nid}", json={"content":"Changed after issue"}).status_code == 409\n    replacement = client.post("/ops/notices", json={"taxpayer_id":"tp-notice","notice_type":"assessment_correction","subject":"Replacement","content":"Corrected notice","supersedes_notice_id":nid})\n    assert replacement.status_code == 201\n    assert replacement.json()["supersedes_notice_id"] == nid\n''')
           PY
       - name: Verify authentication stack is absent
         run: |
-          test ! -e auth.py
-          test ! -e auth_store.py
-          test ! -e auth_migrate.py
-          test ! -e mfa_ui.py
-          test ! -e password_reset.py
-          test ! -e password_reset_ui.py
-          test ! -e ops_auth.py
-          ! grep -R -n -E 'import auth|require_auth|require_revenue_user|Depends\(_revenue_user\)|password_reset|mfa_ui|auth_store|auth_migrate' --include='*.py' --exclude='test_*' .
+          for f in auth.py auth_store.py auth_migrate.py mfa_ui.py password_reset.py password_reset_ui.py ops_auth.py; do test ! -e "$f"; done
+          ! grep -R -n -E 'import auth|require_auth|require_revenue_user|Depends\(_revenue_user\)|Depends\(auth\.|password_reset|mfa_ui|auth_store|auth_migrate' --include='*.py' --exclude='test_*' .
       - name: Run complete test suite
         run: |
           python -m pip install -r requirements.txt
