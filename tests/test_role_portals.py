@@ -1,55 +1,19 @@
-import os
-os.environ.setdefault("PROMET_STAFF_EMAILS", "revenue.staff@example.gov")
-os.environ.setdefault("PROMET_ADMIN_EMAILS", "revenue.admin@example.gov")
-
 from fastapi.testclient import TestClient
-import auth
 from main import app
 
 client = TestClient(app)
 
-
-def test_role_for_email_defaults_to_taxpayer():
-    assert auth.role_for_email("citizen@example.com") == "taxpayer"
-
-
-def test_role_for_email_allows_configured_revenue_staff():
-    assert auth.role_for_email("Revenue.Staff@example.gov") == "revenue_staff"
-
-
-def test_role_for_email_allows_configured_revenue_admin():
-    assert auth.role_for_email("Revenue.Admin@example.gov") == "revenue_admin"
-
-
 def test_taxpayer_portal_uses_ura_promet_brand():
-    response = client.get("/taxpayer")
-    assert response.status_code == 200
-    assert "URA-PROMET" in response.text
-    assert "Taxpayer Portal" in response.text
-
+    r=client.get("/taxpayer"); assert r.status_code==200; assert "URA-PROMET" in r.text; assert "Taxpayer Portal" in r.text
 
 def test_revenue_staff_workspace_exists():
-    response = client.get("/revenue-staff")
-    assert response.status_code == 200
-    assert "Revenue Staff" in response.text
-    assert "Return Review" in response.text
-    assert "Compliance" in response.text
-
+    r=client.get("/revenue-staff"); assert r.status_code==200; assert "Revenue Staff" in r.text; assert "Return Review" in r.text; assert "Compliance" in r.text
 
 def test_revenue_admin_workspace_has_admin_functions():
-    response = client.get("/revenue")
-    assert response.status_code == 200
-    assert "URA-PROMET" in response.text
-    assert "Revenue Admin" in response.text
-    assert "Staff Management" in response.text
-    assert "Role &amp; Permission Management" in response.text
-    assert "System Settings" in response.text
-    assert "Audit Log" in response.text
+    r=client.get("/revenue"); assert r.status_code==200; assert "URA-PROMET" in r.text; assert "Revenue Admin" in r.text; assert "Staff Management" in r.text; assert "Role &amp; Permission Management" in r.text; assert "System Settings" in r.text; assert "Audit Log" in r.text
 
+def test_health_reports_direct_access():
+    r=client.get("/health"); assert r.status_code==200; b=r.json(); assert b["service"]=="URA-PROMET"; assert b["access"]=="direct"
 
-def test_health_advertises_three_roles_and_ura_promet():
-    response = client.get("/health")
-    assert response.status_code == 200
-    body = response.json()
-    assert body["service"] == "URA-PROMET"
-    assert body["role_portals"] == ["taxpayer", "revenue_staff", "revenue_admin"]
+def test_auth_routes_are_absent():
+    assert client.post("/auth/login", json={}).status_code == 404
